@@ -1,0 +1,1767 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JUSANDI 予約カレンダー</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden}
+body{font-family:'Hiragino Sans','Yu Gothic',Arial,sans-serif;background:#f0f0ec;font-size:13px;display:flex;flex-direction:column}
+.topbar{flex-shrink:0;background:#1D9E75;color:#fff;padding:10px 12px;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:nowrap;z-index:100}
+.topbar h1{font-size:15px;font-weight:700;white-space:nowrap}
+.topnav{display:flex;align-items:center;gap:6px}
+.nbtn{background:rgba(255,255,255,0.2);border:1px solid rgba(255,255,255,0.35);color:#fff;padding:5px 12px;border-radius:7px;font-size:13px;cursor:pointer;font-family:inherit}
+.mlbl{font-size:13px;font-weight:600;min-width:72px;text-align:center}
+.load-btn{background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);color:#fff;padding:6px 12px;border-radius:7px;font-size:12px;cursor:pointer;font-family:inherit;white-space:nowrap}
+.status{flex-shrink:0;background:#e8f5f0;border-bottom:1px solid #b2ddd0;padding:6px 14px;font-size:12px;color:#0F6E56;display:none}
+
+/* グリッドラッパー：残りの高さを全部使い両方向スクロール */
+.grid-wrap{flex:1;overflow:auto;-webkit-overflow-scrolling:touch;position:relative}
+
+.grid{border-collapse:collapse;width:max-content;min-width:100%}
+
+/* ヘッダー行：グリッドラッパー内でtop:0にstickyすれば常に見える */
+.grid thead th{
+  position:sticky;top:0;z-index:30;
+  font-size:10px;font-weight:700;padding:6px 3px;
+  text-align:center;border:1px solid #aaa;white-space:nowrap
+}
+.th-day{background:#333;color:#fff;min-width:44px;width:44px;position:sticky;left:0;z-index:40}
+.th-wk{background:#444;color:#fff;min-width:22px;width:22px;position:sticky;left:36px;z-index:40}
+.th-y{background:#0F6E56;color:#fff;min-width:112px}
+.th-s{background:#534AB7;color:#fff;min-width:112px}
+.th-b{background:#185FA5;color:#fff;min-width:112px}
+.th-g{background:#854F0B;color:#fff;min-width:116px}
+.th-m{background:#993C1D;color:#fff;min-width:112px}
+.th-r{background:#3d6b5e;color:#fff;min-width:110px}
+.th-sh{background:#2c3e50;color:#fff;min-width:140px}
+.fac-inline{border-top:1px dashed #d0e8d0;margin-top:3px;padding-top:3px;cursor:pointer}
+.fac-inline:hover{background:rgba(46,125,50,0.05);border-radius:3px}
+.fac-badge{font-size:9px;padding:2px 5px;border-radius:4px;font-weight:700;display:inline-flex;align-items:center;gap:2px;margin-bottom:2px;white-space:nowrap}
+.fb-beaver{background:#e8f5e9;color:#2e7d32}
+.fb-mow{background:#f1f8e9;color:#558b2f}
+.fb-pool{background:#e3f2fd;color:#1565c0}
+.fb-cut{background:#fbe9e7;color:#bf360c}
+.fac-none{font-size:9px;color:#ccc;padding:4px 0}
+
+/* 日付列・曜日列：左固定 */
+.td-day{
+  background:#f8f8f5;text-align:center;font-weight:700;font-size:13px;
+  padding:3px 2px;border:1px solid #ccc;vertical-align:top;
+  white-space:nowrap;color:#333;
+  position:sticky;left:0;z-index:10;min-width:44px;width:44px
+}
+.td-wk{
+  background:#f8f8f5;text-align:center;font-size:10px;
+  padding:2px 1px;border:1px solid #ccc;vertical-align:middle;
+  white-space:nowrap;color:#888;
+  position:sticky;left:36px;z-index:10;min-width:22px;width:22px
+}
+.td-day.sat{color:#185FA5;background:#eff3fb}
+.td-day.sun{color:#cc3333;background:#fdf0f0}
+.td-wk.sat{color:#185FA5;background:#eff3fb}
+.td-wk.sun{color:#cc3333;background:#fdf0f0}
+.today-row .td-day,.today-row .td-wk{background:#fff8e1!important;color:#8a5c00}
+
+/* データセル */
+.td-cell{border:1px solid #ddd;vertical-align:top;padding:0;background:#fff;cursor:pointer;overflow:hidden}
+.td-cell:active{filter:brightness(.97)}
+.td-cell.empty{background:#f9f9f7;cursor:default;padding:4px 5px}
+.td-cell.hol{background:#fff5f5;cursor:default;padding:4px 5px}
+.td-cell.r-cell{background:#f4faf8;padding:4px 5px}
+.td-cell.sh-cell{background:#f8f8f5;vertical-align:top;padding:4px 5px}
+.today-row .td-cell{background:#fffef5}
+.today-row .td-cell.sh-cell{background:#fffde6}
+.cell-single{padding:4px 5px}
+.cell-single.checkin{background:#f0faf5;border-left:3px solid #1D9E75}
+.cell-single.stay{background:#f9f9f9;border-left:3px solid #bbb}
+.cell-single.out-only{background:#fff5f8;border-left:3px solid #e91e8c}
+.cell-single.prev-only{background:#fffef0;border-left:3px solid #f9a825}
+.cell-combo{padding:4px 5px;background:#fff8f0;border-left:3px solid #e65100}
+.combo-divider{border-top:1px dashed #ddd;margin:4px 0}
+.hol-mark{font-size:10px;color:#cc3333;font-weight:700;text-align:center;padding:8px 2px}
+.c-guest{font-size:10px;font-weight:700;color:#1a1a18;line-height:1.35;margin-bottom:2px}
+.badge{font-size:9px;padding:1px 4px;border-radius:4px;font-weight:700;display:inline-block;white-space:nowrap}
+.b-ni{background:#dff2ea;color:#0a5c3e}.b-bf{background:#e8f5dc;color:#2e6b00}
+.b-bfr{background:#faeeda;color:#854F0B}.b-dn{background:#ddeeff;color:#0a3d8a}
+.b-drt{background:#eeedfe;color:#534AB7}
+.time-badge{font-size:10px;padding:2px 6px;border-radius:5px;font-weight:700;display:inline-flex;align-items:center;gap:2px;margin-bottom:3px}
+.tb-ci{background:#e8f5e9;color:#1b5e20;border:1px solid #a5d6a7}
+.tb-co{background:#fce4ec;color:#880e4f;border:1px solid #f48fb1}
+.ev-row{display:flex;flex-wrap:wrap;gap:3px;margin-bottom:3px}
+.ev-icon{font-size:13px;line-height:1}
+.staff-grid{display:flex;flex-direction:column;gap:2px;margin-top:2px}
+.sl{display:flex;align-items:flex-start;gap:3px;min-height:15px}
+.slbl{font-size:8px;padding:2px 4px;border-radius:3px;font-weight:700;white-space:nowrap;flex-shrink:0;text-align:center;margin-top:1px}
+.lbf{background:#e8f5dc;color:#2e6b00}.ldn{background:#ddeeff;color:#0a3d8a}
+.lout{background:#fce4ec;color:#880e4f}.lstay{background:#e3f2fd;color:#0d47a1}
+.lou{background:#d3eaff;color:#0c447c}
+.lprev-in{background:#fff8e1;color:#f57f17;border:1px solid #ffe082}
+.lprev-set{background:#fff3e0;color:#e65100;border:1px solid #ffcc80}
+.lout-combo{background:#fce4ec;color:#880e4f}
+.lin-combo{background:#fff8e1;color:#f57f17;border:1px solid #ffe082}
+.lri{background:#fbe9e7;color:#bf360c}.lro{background:#e8eaf6;color:#283593}
+.lbl{background:#e8f4e8;color:#1b5e20}.lws{background:#e3f2fd;color:#0d47a1}
+.sname{font-size:9px;color:#222;font-weight:600}.snone{font-size:9px;color:#ccc}
+.multi-names{display:flex;flex-wrap:wrap;gap:2px;flex:1}
+.multi-tag{font-size:9px;padding:1px 5px;border-radius:4px;background:#d3eaff;color:#0c447c;font-weight:600}
+.sec-lbl{font-size:8px;font-weight:700;margin-bottom:3px}
+.sec-lbl.out-lbl{color:#880e4f}.sec-lbl.prev-lbl{color:#f57f17}.sec-lbl.combo-lbl{color:#e65100}
+.tr-btn{font-size:11px;padding:2px 7px;border-radius:5px;border:1.5px solid #ddd;background:#f5f5f2;cursor:pointer;line-height:1.4}
+.tr-btn.active-taxi{background:#fff8e1;border-color:#f9a825;color:#e65100;font-weight:700}
+.tr-btn.active-rent{background:#e8f5e9;border-color:#43a047;color:#2e7d32;font-weight:700}
+.transport-row{display:flex;gap:4px;margin-bottom:3px;flex-wrap:wrap}
+.r-sec{margin-bottom:4px;padding-bottom:4px;border-bottom:1px dashed #d0ebe5}
+.r-sec:last-child{border-bottom:none;margin-bottom:0;padding-bottom:0}
+.r-sec-lbl{font-size:8px;font-weight:700;color:#3d6b5e;margin-bottom:2px;text-transform:uppercase}
+.sh-section{margin-bottom:5px;padding-bottom:5px;border-bottom:1px dashed #ddd}
+.sh-section:last-child{border-bottom:none;margin-bottom:0;padding-bottom:0}
+.sh-sec-lbl{font-size:8px;font-weight:700;color:#555;margin-bottom:3px;text-transform:uppercase}
+.sh-entry{display:flex;align-items:center;gap:4px;margin-bottom:2px}
+.sh-type{font-size:10px;font-weight:700;width:16px;height:16px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#fff}
+.sh-name{font-size:10px;font-weight:600;color:#222;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sh-time{font-size:9px;color:#888;white-space:nowrap}
+.sh-none{font-size:9px;color:#ccc;padding:3px 0}
+.front-line{display:flex;align-items:center;gap:4px}
+.front-lbl{font-size:8px;padding:2px 5px;border-radius:4px;font-weight:700;background:#fff3e0;color:#e65100;white-space:nowrap;flex-shrink:0}
+.mov{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.48);display:flex;align-items:flex-start;justify-content:center;z-index:200;padding:10px;overflow-y:auto}
+.mbox{background:#fff;border-radius:14px;padding:16px;width:100%;max-width:360px;margin:auto}
+.mtitle{font-size:13px;font-weight:700;margin-bottom:8px}
+.minfo{font-size:11px;color:#666;margin-bottom:10px;padding:8px 10px;background:#f5f5f2;border-radius:8px;line-height:1.6}
+.msec{font-size:10px;font-weight:700;color:#999;margin:12px 0 6px;border-top:1px solid #eee;padding-top:10px}
+.msec.first{margin-top:0;border-top:none;padding-top:0}
+.sg{margin-bottom:9px}
+.slb{font-size:11px;font-weight:600;display:flex;align-items:center;gap:5px;margin-bottom:6px}
+.slb-b{font-size:9px;padding:2px 7px;border-radius:4px;font-weight:700}
+select,input[type=time]{width:100%;font-size:13px;padding:7px 9px;border:1px solid #ddd;border-radius:8px;font-family:inherit;background:#fff;color:#1a1a18}
+.transport-sel{display:flex;gap:8px;margin-top:4px}
+.tr-sel-btn{flex:1;padding:12px 8px;border-radius:10px;border:2px solid #eee;background:#fafaf8;cursor:pointer;font-family:inherit;font-size:13px;text-align:center}
+.tr-sel-btn.sel-taxi{border-color:#f9a825;background:#fff8e1;color:#e65100;font-weight:700}
+.tr-sel-btn.sel-rent{border-color:#43a047;background:#e8f5e9;color:#2e7d32;font-weight:700}
+.tr-sel-btn.sel-none{border-color:#ddd;background:#f5f5f2;color:#999}
+.multi-check-grid{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:4px}
+.mc-lbl{display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;padding:6px 8px;border:1px solid #e0eeff;border-radius:8px;background:#f5f9ff}
+.mc-lbl input{width:15px;height:15px;accent-color:#0c447c;cursor:pointer;flex-shrink:0}
+.mc-lbl.checked{background:#d3eaff;border-color:#6fb3f7}
+.ev-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px;margin-top:4px}
+.ev-chk-lbl{display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;padding:5px;border:1px solid #eee;border-radius:8px;background:#fafaf8}
+.ev-chk-lbl input{width:14px;height:14px;accent-color:#1D9E75;cursor:pointer;flex-shrink:0}
+.sh-row-modal{display:flex;align-items:center;gap:8px;margin-bottom:7px;padding:6px 8px;border:1px solid #eee;border-radius:8px;background:#fafaf8}
+.sh-type-lbl{font-size:11px;font-weight:700;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;flex-shrink:0}
+.sh-time-lbl{font-size:10px;color:#888;min-width:84px;flex-shrink:0}
+.sh-name-sel{flex:1;font-size:12px;padding:5px 6px;border:1px solid #ddd;border-radius:6px;font-family:inherit;background:#fff}
+.front-row-modal{display:flex;align-items:center;gap:8px;margin-bottom:7px;padding:8px 10px;border:2px solid #ffe0b2;border-radius:8px;background:#fffbf5}
+.front-label-m{font-size:11px;font-weight:700;color:#e65100;min-width:60px;flex-shrink:0}
+.mbtns{display:flex;gap:8px;margin-top:14px}
+.bcl{flex:1;padding:9px;background:#f5f5f2;border:1px solid #ddd;border-radius:8px;font-size:13px;cursor:pointer;font-family:inherit}
+.bsv{flex:1;padding:9px;background:#1D9E75;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}
+
+.view-tab{flex:1;padding:9px 4px;border:none;background:transparent;font-size:12px;font-family:inherit;color:#888;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap}
+.view-tab.active{color:#1D9E75;border-bottom-color:#1D9E75;font-weight:700}
+.panel-wrap{flex:1;display:flex;flex-direction:column;overflow:hidden}
+/* 不可日カレンダー */
+.off-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-top:4px}
+.off-day{height:40px;border-radius:8px;border:1px solid #e0e0da;background:#fff;font-size:12px;font-weight:600;color:#333;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:1px;-webkit-tap-highlight-color:transparent}
+.off-day.sat{color:#185FA5;background:#f0f4fc}
+.off-day.sun{color:#cc3333;background:#fdf0f0}
+.off-day.off{background:#ff5252;color:#fff;border-color:#cc3333}
+.off-day.today{border:2px solid #1D9E75}
+.off-day.empty{background:transparent;border:none;cursor:default}
+.off-wk-hdr{text-align:center;font-size:10px;color:#999;padding:2px 0}
+/* グレーアウト */
+.mc-lbl.disabled{background:#f5f5f5;border-color:#e0e0da;color:#bbb;cursor:not-allowed;opacity:.6}
+.mc-lbl.disabled input{cursor:not-allowed;accent-color:#bbb}
+.unavail-badge{font-size:8px;color:#cc3333;display:block;line-height:1}
+.off-chip{font-size:8px;padding:1px 3px;border-radius:3px;background:#ffeeee;color:#cc3333;font-weight:700;display:block;margin-top:1px;line-height:1.3}
+</style>
+</head>
+<body>
+<datalist id="nat-list">
+  <option value="日本"><option value="アメリカ"><option value="オーストラリア">
+  <option value="中国"><option value="韓国"><option value="台湾">
+  <option value="イギリス"><option value="フランス"><option value="ドイツ">
+  <option value="シンガポール"><option value="香港"><option value="タイ">
+  <option value="インド"><option value="カナダ"><option value="ニュージーランド">
+  <option value="イタリア"><option value="スペイン"><option value="ブラジル">
+  <option value="イスラエル"><option value="ロシア"><option value="フィリピン">
+</datalist>
+<datalist id="lang-list">
+  <option value="日本語"><option value="英語"><option value="中国語">
+  <option value="韓国語"><option value="フランス語"><option value="ドイツ語">
+  <option value="スペイン語"><option value="ポルトガル語"><option value="タイ語">
+  <option value="ヘブライ語"><option value="ロシア語"><option value="イタリア語">
+</datalist>
+<div class="topbar">
+  <h1>🏡 JUSANDI</h1>
+  <div class="topnav">
+    <button class="nbtn" onclick="chM(-1)">‹</button>
+    <span class="mlbl" id="mlbl"></span>
+    <button class="nbtn" onclick="chM(1)">›</button>
+  </div>
+  <button class="load-btn" onclick="autoScheduleFac(event)">⚡ 施設管理自動</button><button class="load-btn" onclick="document.getElementById('xl-input').click()">📂 Excel読込</button>
+  <button class="load-btn" onclick="openCloudPanel()" id="cloud-btn" style="background:rgba(255,255,255,0.15)">☁️ クラウド同期</button>
+  <button class="load-btn" onclick="openStaffMgr()">👥 スタッフ管理</button>
+  <button class="load-btn" onclick="exportJSON()">💾 JSON保存</button>
+  <button class="load-btn" onclick="document.getElementById('json-input').click()">📂 JSON読込</button>
+  <input type="file" id="json-input" accept=".json" style="display:none" onchange="importJSON(event)">
+  <input type="file" id="xl-input" accept=".xlsx,.xls" style="display:none" onchange="loadXL(event)">
+</div>
+<div class="status" id="status"></div>
+<div style="flex-shrink:0;display:flex;background:#fff;border-bottom:1px solid #e0e0da">
+  <button class="view-tab active" id="tab-cal" onclick="switchView('cal')">📅 カレンダー</button>
+  <button class="view-tab" id="tab-off" onclick="switchView('off')">🙅 不可日入力</button>
+</div>
+<div id="panel-cal" class="panel-wrap">
+<div class="grid-wrap">
+  <table class="grid" id="grid"></table>
+</div>
+</div>
+
+<!-- 不可日入力パネル -->
+<div id="panel-off" class="panel-wrap" style="display:none">
+  <div style="padding:12px 8px">
+    <div style="font-size:13px;font-weight:700;color:#993C1D;margin-bottom:12px">🙅 スタッフ不可日入力</div>
+    <div style="font-size:12px;color:#666;margin-bottom:10px">スタッフを選んで不可日をタップしてください</div>
+    <div id="off-staff-tabs" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px"></div>
+    <div id="off-selected-lbl" style="font-size:12px;color:#888;margin-bottom:8px">← スタッフを選択してください</div>
+    <div id="off-cal-wrap">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <button onclick="offChM(-1)" style="padding:4px 10px;border:1px solid #ddd;border-radius:6px;background:#fff;cursor:pointer;font-family:inherit">‹</button>
+        <span id="off-month-lbl" style="font-size:13px;font-weight:700"></span>
+        <button onclick="offChM(1)" style="padding:4px 10px;border:1px solid #ddd;border-radius:6px;background:#fff;cursor:pointer;font-family:inherit">›</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:6px">
+        <div style="text-align:center;font-size:10px;color:#e53935;font-weight:700">日</div>
+        <div style="text-align:center;font-size:10px;color:#333;font-weight:700">月</div>
+        <div style="text-align:center;font-size:10px;color:#333;font-weight:700">火</div>
+        <div style="text-align:center;font-size:10px;color:#333;font-weight:700">水</div>
+        <div style="text-align:center;font-size:10px;color:#333;font-weight:700">木</div>
+        <div style="text-align:center;font-size:10px;color:#333;font-weight:700">金</div>
+        <div style="text-align:center;font-size:10px;color:#1565c0;font-weight:700">土</div>
+      </div>
+      <div id="off-cal" class="off-grid"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.body.style.background='#ffe';
+const VILLAS=['YARABU','SANNIN','BINDO','GASHIMUNE','MAANI'];
+const WEEK=['日','月','火','水','木','金','土'];
+const EVS=[{k:'Can',icon:'🕯'},{k:'FL',icon:'💐'},{k:'Cake',icon:'🎂'},{k:'Spa',icon:'💆'},{k:'Photo',icon:'📷'},{k:'Wine',icon:'🍷'},{k:'Other',icon:'✨'}];
+const SHIFT_TYPES=[
+  {id:'A',time:'8:00〜',color:'#2e7d32'},
+  {id:'B',time:'9:00〜',color:'#1565c0'},
+  {id:'C',time:'10:00〜',color:'#6a1b9a'},
+  {id:'D',time:'11:00〜',color:'#e65100'},
+  {id:'E',time:'12:00〜',color:'#c62828'},
+  {id:'F',time:'13:00〜',color:'#00838f'},
+  {id:'G',time:'22:00〜3:00',color:'#37474f'},
+  {id:'H',time:'8:00〜18:00(B2H)',color:'#4e342e'},
+  {id:'I',time:'12:00〜16:00',color:'#00695c'},
+  {id:'J',time:'10:00〜19:00',color:'#f57f17'},
+  {id:'K',time:'9:00〜22:00(B1h)',color:'#4527a0'},
+  {id:'L',time:'8:00〜12:00',color:'#558b2f'},
+  {id:'M',time:'18:00〜22:00',color:'#ad1457'},
+  {id:'N',time:'18:00〜3:00',color:'#283593'},
+  {id:'O',time:'14:00〜18:00',color:'#6d4c41'},
+]
+function villaHasGuest(villa,dk){
+  var bks=BD[villa]||{};
+  var keys=Object.keys(bks);
+  for(var ki=0;ki<keys.length;ki++){
+    var ciDk=keys[ki];
+    var bkArr=bks[ciDk];
+    for(var bi=0;bi<bkArr.length;bi++){
+      var b=bkArr[bi];
+      if(b.g==='休館日'&&ciDk===dk)return true;
+      if(HOLIDAYS.has(ciDk)||b.g==='休館日'){if(!cells[v][ciDk])cells[v][ciDk]={};cells[v][ciDk].hol=true;return;}
+      var ciMs=new Date(ciDk).getTime();
+      var tMs=new Date(dk).getTime();
+      var nights=b.n||0;
+      var coMs=ciMs+nights*86400000;
+      if(tMs>=ciMs&&tMs<coMs)return true;
+    }
+  }
+  return false;
+}
+function isAnyGuest(dk){
+  return VILLAS.some(function(v){return villaHasGuest(v,dk);});
+}
+let curY=2026,curM=5;
+function nb(g,n,m,drt){return{g,n,m,drt,bf:'',dn:'',si_in:[],setting:"",si_out:[],si_stay:[],so_prev:[],so:[],ci:'',co:'',ev:[],transport:''}}
+let BD={YARABU:{},SANNIN:{},BINDO:{},GASHIMUNE:{},MAANI:{}};
+// 施設管理データ: {villa: {dk: {beaver:{on,staff}, mow, pool, cut}}}
+let FAC={};
+VILLAS.concat(['Reception棟']).forEach(v=>{FAC[v]={};});
+function getFAC(villa,dk){
+  if(!FAC[villa])FAC[villa]={};
+  if(!FAC[villa][dk])FAC[villa][dk]={
+    note:'',beaver:{on:false,staff:''},
+    mow:   {on:false,staff:''},
+    pool:  {on:false,staff:''},
+    cut:   {on:false,staff:''},
+    note:''
+  };
+  return FAC[villa][dk];
+}
+function hasFac(villa,dk){
+  if(!FAC[villa]||!FAC[villa][dk])return false;
+  return FAC_ITEMS.some(it=>FAC[villa][dk][it.id].on);
+}
+const FAC_ITEMS=[{id:'beaver',label:'ビーバー芝刈り',bg:'#e8f5e9',col:'#2e7d32',icon:'🦫'},{id:'mow',label:'芝刈り機',bg:'#f1f8e9',col:'#558b2f',icon:'🌿'},{id:'pool',label:'プール清掃',bg:'#e3f2fd',col:'#1565c0',icon:'🏊'},{id:'cut',label:'伐採',bg:'#fbe9e7',col:'#bf360c',icon:'🪓'}];
+let RD={},SD={};
+function getRD(dk){if(!RD[dk])RD[dk]={rsi:'',rso:'',bl:'',ws:'',note:''};return RD[dk];}
+function getSD(dk){if(!SD[dk])SD[dk]={front:''};return SD[dk];}
+
+
+let STAFF=['クマ','ナカ','マエ','ミヤ','コハ','サト','ヨシ'];
+try{STAFF=JSON.parse(localStorage.getItem('jusandi_staff')||'["クマ","ナカ","マエ","ミヤ","コハ","サト","ヨシ"]');}catch(e){}
+let STAFF_E=[''].concat(STAFF);
+function saveStaff(){try{localStorage.setItem('jusandi_staff',JSON.stringify(STAFF));}catch(e){}STAFF_E=[''].concat(STAFF);}
+let TAXI_LIST=[];try{TAXI_LIST=JSON.parse(localStorage.getItem('taxi_list')||'[]');}catch(e){}
+function saveTaxiList(){try{localStorage.setItem('taxi_list',JSON.stringify(TAXI_LIST));}catch(e){}}
+let HOL_DATA={};
+let HOLIDAYS=new Set();
+function saveHolidays(){}
+let CLEAN_DATA={};
+function getClean(villa,dk){if(!CLEAN_DATA[villa])CLEAN_DATA[villa]={};if(!CLEAN_DATA[villa][dk])CLEAN_DATA[villa][dk]={indoor:'',outdoor:'',window:'',note:''};return CLEAN_DATA[villa][dk];}
+function cleanBadge(val,icon,label,bg,col){if(val)return '<span style="font-size:8px;padding:1px 4px;border-radius:3px;background:'+bg+';color:'+col+'">'+icon+val+'</span>';return '<span style="font-size:8px;color:#bbb">'+icon+label+'</span>';}
+function cleanInlineHtml(villa,dk){const cl=getClean(villa,dk);return '<div onclick="openCleanModal(\''+dk+'\',\''+villa+'\',event)" style="border-top:1px dashed #eee;padding:3px 4px;cursor:pointer"><div style="font-size:8px;font-weight:700;color:#888;margin-bottom:2px">🧹 清掃担当</div><div style="display:flex;gap:3px;flex-wrap:wrap">'+cleanBadge(cl.indoor,'🏠','室内','#e3f2fd','#1565c0')+cleanBadge(cl.outdoor,'🌿','外','#e8f5e9','#2e7d32')+cleanBadge(cl.window,'🪟','窓','#e0f7fa','#00695c')+'</div>'+(cl.note?'<div style="font-size:8px;color:#555;margin-top:2px">✏️'+cl.note+'</div>':'')+'</div>';}
+let _transport='';
+const PURPOSES=[{k:'anniversary',lbl:'🎂記念日'},{k:'couple',lbl:'💑カップル'},{k:'family',lbl:'👨‍👩‍👧‍👦家族'},{k:'friends',lbl:'👫友人'},{k:'solo',lbl:'🧍一人旅'},{k:'work',lbl:'💼仕事'},{k:'healing',lbl:'🌿癒し'},{k:'snorkeling',lbl:'🤿シュノーケル'},{k:'diving',lbl:'🤿ダイビング'},{k:'fishing',lbl:'🎣釣り'}];
+function loadXL(e){
+  const file=e.target.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=function(ev){
+    try{
+      const wb=XLSX.read(ev.target.result,{type:'binary',cellDates:true});
+      BD={YARABU:{},SANNIN:{},BINDO:{},GASHIMUNE:{},MAANI:{}};
+      HOLIDAYS.clear();let cnt=0;
+      const monthSheets=wb.SheetNames.filter(n=>/\d{4}年\d{1,2}月/.test(n));
+      const sheets=monthSheets.length>0?monthSheets:[wb.SheetNames[0]];
+      sheets.forEach(shName=>{
+        const ws=wb.Sheets[shName];if(!ws)return;
+        const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:false,dateNF:'YYYY/MM/DD'});
+        rows.slice(1).forEach(row=>{
+          if(!row[0]||!row[1])return;
+          const villa=String(row[0]).trim();if(!VILLAS.includes(villa))return;
+          const ds=String(row[1]).trim();
+          const mm=ds.match(/(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})/);if(!mm)return;
+          const dk=mm[1]+'-'+mm[2].padStart(2,'0')+'-'+mm[3].padStart(2,'0');
+          const b=nb(String(row[2]||'').trim(),parseInt(row[3])||0,String(row[4]||'').trim(),String(row[5]||'').toUpperCase()==='YES');
+          if(b.g==='休館日'){HOLIDAYS.add(dk);return;}
+          b.bf=String(row[7]||'').trim();b.dn=String(row[8]||'').trim();
+          b.si_in=String(row[9]||'').split(',').map(x=>x.trim()).filter(x=>x);
+          b.setting=String(row[10]||'').trim();
+          b.si_stay=String(row[11]||'').split(',').map(x=>x.trim()).filter(x=>x);
+          b.si_out=String(row[12]||'').split(',').map(x=>x.trim()).filter(x=>x);
+          b.so_prev=String(row[13]||'').split(',').map(x=>x.trim()).filter(x=>x);
+          b.so=String(row[14]||'').split(',').map(x=>x.trim()).filter(x=>x);
+          b.ci=String(row[15]||'').trim();b.co=String(row[16]||'').trim();
+          b.ev=String(row[17]||'').split(',').map(x=>x.trim()).filter(x=>x);
+          b.bf_start=String(row[18]||'').trim();b.bf_end=String(row[19]||'').trim();
+          b.dn_start=String(row[20]||'').trim();b.dn_end=String(row[21]||'').trim();
+          b.nationality=String(row[22]||'').trim();b.language=String(row[23]||'').trim();
+          if(!BD[villa][dk])BD[villa][dk]=[];BD[villa][dk].push(b);cnt++;
+        });
+      });
+      const mo=parseInt(sheets[0].match(/\d{4}年(\d{1,2})月/)?.[1]||6);
+      const yr=parseInt(sheets[0].match(/(\d{4})年/)?.[1]||2026);
+      curY=yr;curM=mo;
+      const st=document.getElementById('status');
+      if(st){st.style.display='block';st.textContent='✅ '+file.name+' 読込完了（予約'+cnt+'件）';}
+      render();
+    }catch(err){alert('読み込み失敗: '+err.message);}
+  };reader.readAsBinaryString(file);e.target.value='';
+}
+
+function addDays(dk,d){const dt=new Date(dk);dt.setDate(dt.getDate()+d);return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;}
+function key(y,m,d){return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`}
+function dim(y,m){return new Date(y,m,0).getDate()}
+
+
+let DONE_DATA={};
+function getDone(villa,dk){
+  if(!DONE_DATA[villa])DONE_DATA[villa]={};
+  if(!DONE_DATA[villa][dk])DONE_DATA[villa][dk]={};
+  return DONE_DATA[villa][dk];
+}
+function toggleDone(villa,dk,key,e){
+  if(e)e.stopPropagation();
+  const d=getDone(villa,dk);
+  d[key]=!d[key];
+  render();
+}
+function doneBox(villa,dk,key,label,color){
+  const done=getDone(villa,dk)[key];
+  return '<span onclick="toggleDone(\''+villa+'\',\''+dk+'\',\''+key+'\',event)" '
+    +'style="display:inline-flex;align-items:center;gap:2px;cursor:pointer;padding:2px 5px;border-radius:4px;'
+    +'background:'+(done?color:'#f0f0f0')+';border:1px solid '+(done?color:'#ccc')+';font-size:8px;'
+    +'text-decoration:'+(done?'line-through':'none')+';color:'+(done?'#fff':'#666')+';">'
+    +(done?'✅':'☐')+' '+label+'</span>';
+}
+function buildCells(){
+  const cells={};VILLAS.forEach(v=>{cells[v]={};});
+  VILLAS.forEach(v=>{
+    Object.entries(BD[v]||{}).forEach(([dk,bks])=>{
+      bks.forEach(b=>{
+        if(b.g==='休館日'){if(!cells[v][dk])cells[v][dk]={};cells[v][dk].hol=true;return;}
+        const prevDk=addDays(dk,-1);
+        if(!cells[v][prevDk])cells[v][prevDk]={};
+        cells[v][prevDk].prev={b,parentDk:dk};
+        if(!cells[v][dk])cells[v][dk]={};
+        cells[v][dk].checkin={b,parentDk:dk};
+        for(let i=1;i<b.n;i++){const nd=addDays(dk,i);if(!cells[v][nd])cells[v][nd]={};cells[v][nd].stay={b,parentDk:dk};}
+        if(b.n>=1){const cod=addDays(dk,b.n);if(!cells[v][cod])cells[v][cod]={};if(!cells[v][cod].checkin)cells[v][cod].out={b,parentDk:dk};}
+      });
+    });
+  });
+  return cells;
+}
+
+function mBadge(m){if(!m)return'';if(m.includes('BFR'))return`<span class="badge b-bfr">${m}</span>`;if(m.includes('BF'))return`<span class="badge b-bf">${m}</span>`;if(m.includes('DN'))return`<span class="badge b-dn">${m}</span>`;return'';}
+function evIcons(ev){if(!ev||!ev.length)return'';return'<div class="ev-row">'+ev.map(k=>{const e=EVS.find(x=>x.k===k);return e?`<span class="ev-icon">${e.icon}</span>`:''}).join('')+'</div>';}
+function sRow(lbl,cls,val){return`<div class="sl"><span class="slbl ${cls}">${lbl}</span>${val?`<span class="sname">${val}</span>`:`<span class="snone">未定</span>`}</div>`;}
+function multiRow(lbl,cls,arr){const tags=arr&&arr.length?arr.map(n=>`<span class="multi-tag">${n}</span>`).join(''):`<span class="snone">未定</span>`;return`<div class="sl"><span class="slbl ${cls}">${lbl}</span><div class="multi-names">${tags}</div></div>`;}
+function transportIcon(t){if(t==='タクシー'||t==='taxi')return`<span class="tr-btn active-taxi">🚕 タクシー</span>`;if(t==='レンタカー'||t==='rent')return`<span class="tr-btn active-rent">🚗 レンタカー</span>`;return'';}
+
+function buildGuestEditor(gs){
+  gs=gs||{males:[],females:[],children:[]};
+  const ages=Array.from({length:80},(_,i)=>i+1).map(a=>`<option value="${a}">${a}歳</option>`).join('');
+  let html='';
+  // 男性
+  html+=`<div style="margin-bottom:8px">
+    <div style="font-size:11px;font-weight:600;color:#1565c0;margin-bottom:4px">👨 男性</div>
+    <div id="males-list">${gs.males.map((p,i)=>maleRow(i,p.age,ages)).join('')}</div>
+    <button onclick="addGuest('M')" style="font-size:11px;padding:4px 10px;border-radius:6px;border:1px dashed #90caf9;background:transparent;color:#1565c0;cursor:pointer">＋ 追加</button>
+  </div>`;
+  // 女性
+  html+=`<div style="margin-bottom:8px">
+    <div style="font-size:11px;font-weight:600;color:#880e4f;margin-bottom:4px">👩 女性</div>
+    <div id="females-list">${gs.females.map((p,i)=>femaleRow(i,p.age,ages)).join('')}</div>
+    <button onclick="addGuest('F')" style="font-size:11px;padding:4px 10px;border-radius:6px;border:1px dashed #f48fb1;background:transparent;color:#880e4f;cursor:pointer">＋ 追加</button>
+  </div>`;
+  // 子供
+  html+=`<div style="margin-bottom:8px">
+    <div style="font-size:11px;font-weight:600;color:#6a1b9a;margin-bottom:4px">👶 子供</div>
+    <div id="children-list">${gs.children.map((p,i)=>childRow(i,p.gender,p.age,ages)).join('')}</div>
+    <button onclick="addGuest('C')" style="font-size:11px;padding:4px 10px;border-radius:6px;border:1px dashed #ce93d8;background:transparent;color:#6a1b9a;cursor:pointer">＋ 追加</button>
+  </div>`;
+  return html;
+}
+function maleRow(i,age,ages){
+  if(!ages)ages=Array.from({length:80},(_,j)=>j+1).map(a=>`<option value="${a}"${a==age?' selected':''}>  ${a}歳</option>`).join('');
+  return`<div id="male-${i}" style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+    <select id="m-age-${i}" style="font-size:12px;padding:5px;border:1px solid #ddd;border-radius:6px;font-family:inherit;flex:1"><option value="">年齢</option>${Array.from({length:80},(_,j)=>j+1).map(a=>`<option value="${a}"${a==age?' selected':''}>${a}歳</option>`).join('')}</select>
+    <button onclick="removeGuest('M',${i})" style="font-size:11px;padding:2px 8px;border-radius:5px;border:1px solid #ffcdd2;background:#fff;color:#cc3333;cursor:pointer">✕</button>
+  </div>`;
+}
+function femaleRow(i,age,ages){
+  return`<div id="female-${i}" style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+    <select id="f-age-${i}" style="font-size:12px;padding:5px;border:1px solid #ddd;border-radius:6px;font-family:inherit;flex:1"><option value="">年齢</option>${Array.from({length:80},(_,j)=>j+1).map(a=>`<option value="${a}"${a==age?' selected':''}>${a}歳</option>`).join('')}</select>
+    <button onclick="removeGuest('F',${i})" style="font-size:11px;padding:2px 8px;border-radius:5px;border:1px solid #ffcdd2;background:#fff;color:#cc3333;cursor:pointer">✕</button>
+  </div>`;
+}
+function childRow(i,gender,age,ages){
+  return`<div id="child-${i}" style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+    <select id="c-gender-${i}" style="font-size:12px;padding:5px;border:1px solid #ddd;border-radius:6px;font-family:inherit;width:70px">
+      <option value="M"${gender==='M'?' selected':''}>👦 男</option>
+      <option value="F"${gender==='F'?' selected':''}>👧 女</option>
+    </select>
+    <select id="c-age-${i}" style="font-size:12px;padding:5px;border:1px solid #ddd;border-radius:6px;font-family:inherit;flex:1"><option value="">年齢</option>${Array.from({length:18},(_,j)=>j+1).map(a=>`<option value="${a}"${a==age?' selected':''}>${a}歳</option>`).join('')}</select>
+    <button onclick="removeGuest('C',${i})" style="font-size:11px;padding:2px 8px;border-radius:5px;border:1px solid #ffcdd2;background:#fff;color:#cc3333;cursor:pointer">✕</button>
+  </div>`;
+}
+function addGuest(type){
+  const gs=collectGuests();
+  if(type==='M')gs.males.push({age:''});
+  else if(type==='F')gs.females.push({age:''});
+  else gs.children.push({gender:'M',age:''});
+  document.getElementById('guest-editor').innerHTML=buildGuestEditor(gs);
+}
+function removeGuest(type,i){
+  const gs=collectGuests();
+  if(type==='M')gs.males.splice(i,1);
+  else if(type==='F')gs.females.splice(i,1);
+  else gs.children.splice(i,1);
+  document.getElementById('guest-editor').innerHTML=buildGuestEditor(gs);
+}
+function collectGuests(){
+  const males=[],females=[],children=[];
+  document.querySelectorAll('[id^="m-age-"]').forEach(el=>{males.push({age:el.value?parseInt(el.value):''});});
+  document.querySelectorAll('[id^="f-age-"]').forEach(el=>{females.push({age:el.value?parseInt(el.value):''});});
+  const cAges=document.querySelectorAll('[id^="c-age-"]');
+  const cGens=document.querySelectorAll('[id^="c-gender-"]');
+  cAges.forEach((el,i)=>{children.push({gender:cGens[i]?cGens[i].value:'M',age:el.value?parseInt(el.value):''});});
+  return{males,females,children};
+}
+function guestBadges(b){
+  const gs=b.guests||{males:[],females:[],children:[]};
+  if(!gs.males.length&&!gs.females.length&&!gs.children.length)return'';
+  let badges='<div style="display:flex;flex-wrap:wrap;gap:2px;margin-bottom:3px">';
+  gs.males.forEach(p=>{badges+=`<span style="font-size:9px;padding:1px 5px;border-radius:4px;background:#e3f2fd;color:#1565c0;font-weight:600">👨${p.age?p.age+'歳':''}</span>`;});
+  gs.females.forEach(p=>{badges+=`<span style="font-size:9px;padding:1px 5px;border-radius:4px;background:#fce4ec;color:#880e4f;font-weight:600">👩${p.age?p.age+'歳':''}</span>`;});
+  gs.children.forEach(p=>{const icon=p.gender==='M'?'👦':'👧';badges+=`<span style="font-size:9px;padding:1px 5px;border-radius:4px;background:#f3e5f5;color:#6a1b9a;font-weight:600">${icon}${p.age?p.age+'歳':''}</span>`;});
+  badges+='</div>';
+  return badges;
+}
+function checkinInner(b){
+  const m=b.m||'';const hasBF=m.includes('BF')||m.includes('BFR');const hasDN=m.includes('DN');
+  return`<div class="c-guest">${b.g}</div>
+    <div style="display:flex;gap:2px;flex-wrap:wrap;margin-bottom:2px">
+      ${b.n>0?`<span class="badge b-ni">${b.n}泊</span>`:''}${mBadge(b.m)}${b.drt?`<span class="badge b-drt">DRT</span>`:''}
+    </div>
+    ${guestBadges(b)}
+    ${b.ci?`<div style="margin-bottom:2px"><span class="time-badge tb-ci">▶ IN ${b.ci}</span></div>`:''}
+    ${b.bf_start||b.bf_end?`<div style="margin-bottom:2px"><span class="time-badge" style="background:#eaf3de;color:#2e6b00;border:1px solid #c5e0a5">🍳 BF ${b.bf_start||'?'}〜${b.bf_end||'?'}</span></div>`:''}
+    ${b.dn_start||b.dn_end?`<div style="margin-bottom:2px"><span class="time-badge" style="background:#ddeeff;color:#0a3d8a;border:1px solid #9dc8f5">🍽 DN ${b.dn_start||'?'}〜${b.dn_end||'?'}</span></div>`:''}
+    ${b.transport?`<div class="transport-row">${transportIcon(b.transport)}</div>`:''}
+    ${evIcons(b.ev)}
+    <div class="staff-grid">
+      ${hasBF?sRow('BF','lbf',b.bf):''}${hasDN?sRow('DN','ldn',b.dn):''}
+      ${multiRow('外','lou',b.so)}
+    </div>`;
+}
+
+function buildCellHtml(dk,v,cd){
+  if(!cd||Object.keys(cd).length===0)return`<td class="td-cell empty" style="padding:0"><div class="cell-single" style="min-height:36px"><div onclick="openNew('${dk}','${v}',event)" style="font-size:9px;color:#1D9E75;text-align:center;padding:3px 0;cursor:pointer;font-weight:600">＋ 予約入力</div>${cleanInlineHtml(v,dk)}${facInlineHtml(v,dk)}</div></td>`;
+  if(cd.hol)return`<td class="td-cell hol"><div class="hol-mark">🔴 休館日</div></td>`;
+  const{out,prev,checkin,stay}=cd;
+  if(out&&prev&&!checkin&&!stay){
+    const ob=out.b,pb=prev.b;
+    return`<td class="td-cell" style="padding:0;border:2px solid #e53935;box-shadow:0 0 6px rgba(229,57,53,0.3)" onclick="openComboModal('${out.parentDk}','${prev.parentDk}','${v}',event)">
+      <div class="cell-combo" style="background:linear-gradient(to bottom,#fce4ec 0%,#fce4ec 48%,#fff3e0 52%,#fff3e0 100%)">
+        <div style="display:flex;justify-content:center;margin-bottom:4px"><span style="font-size:10px;font-weight:700;padding:2px 10px;border-radius:10px;background:#e53935;color:#fff">◀ OUT＋IN 🌅</span></div>
+        ${ob.co?`<span class="time-badge tb-co">◀ ${ob.co}</span>`:''}
+        <div class="staff-grid">
+          ${multiRow('OUT清掃','lout-combo',ob.si_out)}
+          <div style="border-top:2px solid #e53935;margin:4px 0"></div>
+          ${multiRow('IN清掃','lin-combo',pb.si_in)}${sRow('設定','lprev-set',pb.setting)}
+        </div>
+        ${facInlineHtml(v,dk)}
+      </div>
+    </td>`;
+  }
+  if(out&&checkin){
+    const ob=out.b,b=checkin.b;
+    return`<td class="td-cell" style="padding:0;border:2px solid #e53935;box-shadow:0 0 6px rgba(229,57,53,0.3)">
+      <div style="display:flex;justify-content:center;padding:3px 0;background:#e53935"><span style="font-size:9px;font-weight:700;color:#fff">◀ OUT＋IN 🌅</span></div>
+      <div class="cell-single out-only" onmouseover="showDetail('${dk}','${v}',event)" onmouseout="hideDetail()" onclick="openModal('${out.parentDk}','${v}','checkout',event)">
+        <div class="sec-lbl out-lbl">◀ CO ${ob.g}</div>
+        ${ob.co?`<span class="time-badge tb-co">◀ ${ob.co}</span>`:''}
+        <div class="staff-grid">${multiRow('OUT清掃','lout',ob.si_out)}</div>
+        ${ob.co_taxi_time?`<span class="trtaxi">🚕 ${ob.co_taxi_time}</span>`:''}
+        ${ob.co_bf?`<div style="display:flex;align-items:center;gap:3px;margin-bottom:2px"><span class="slbl lbf">BF</span><span class="sname">${ob.co_bf}</span></div>`:''}
+      </div>
+      <div style="border-top:1.5px solid #a5d6a7"></div>
+      <div class="cell-single checkin" onclick="openModal('${checkin.parentDk}','${v}','checkin',event)">${checkinInner(b)}</div>
+    </td>`;
+  }
+  if(out&&!checkin&&!stay&&!prev){
+    const ob=out.b;
+    return`<td class="td-cell" style="padding:0"  onmouseover="showDetail(${out.parentDk},${v},event)" onmouseout="hideDetail()" onclick="openModal('${out.parentDk}','${v}','checkout',event)">
+      <div class="cell-single out-only">
+        <div class="sec-lbl out-lbl">◀ CO ${ob.g}</div>
+        ${ob.co?`<span class="time-badge tb-co">◀ ${ob.co}</span>`:''}
+        <div class="staff-grid">${multiRow('OUT清掃','lout',ob.si_out)}</div>
+        ${ob.co_taxi_time?`<span class="trtaxi">🚕 ${ob.co_taxi_time}</span>`:''}
+        ${ob.co_bf?`<div style="display:flex;align-items:center;gap:3px;margin-bottom:2px"><span class="slbl lbf">BF</span><span class="sname">${ob.co_bf}</span>${ob.co_bf_s?`<span style="font-size:8px;color:#666">${ob.co_bf_s}〜${ob.co_bf_e||''}</span>`:''}</div>`:''}
+        ${ob.co_note?`<div style="font-size:8px;color:#555;margin-top:1px">📝${ob.co_note}</div>`:''}
+        ${facInlineHtml(v,dk)}
+      </div>
+    </td>`;
+  }
+  if(prev&&!out&&!checkin&&!stay){
+    const pb=prev.b;
+    return`<td class="td-cell" style="padding:0"  onmouseover="showDetail(${prev.parentDk},${v},event)" onmouseout="hideDetail()" onclick="openModal('${prev.parentDk}','${v}','prev',event)">
+      <div class="cell-single prev-only">
+        <div class="sec-lbl prev-lbl">🌅 前日準備</div>
+        <div class="staff-grid">${multiRow('IN清掃','lprev-in',pb.si_in)}${sRow('設定','lprev-set',pb.setting)}${multiRow('外','lou',pb.so_prev)}</div>
+        ${facInlineHtml(v,dk)}
+      </div>
+    </td>`;
+  }
+  if(checkin&&!out){
+    const b=checkin.b;
+    return`<td class="td-cell" style="padding:0"  onmouseover="showDetail('${dk}','${v}',event)" onmouseout="hideDetail()" onmouseover="showDetail('${dk}','${v}',event)" onmouseout="hideDetail()" onclick="openModal('${checkin.parentDk}','${v}','checkin',event)">
+      <div class="cell-single checkin">${checkinInner(b)}</div>
+    </td>`;
+  }
+  if(stay){
+    const b=stay.b;
+    return`<td class="td-cell" style="padding:0"  onmouseover="showDetail('${dk}','${v}',event)" onmouseout="hideDetail()" onmouseover="showDetail('${dk}','${v}',event)" onmouseout="hideDetail()" onclick="openModal('${stay.parentDk}','${v}','stay',event)">
+      <div class="cell-single stay">
+        <div style="font-size:9px;color:#aaa;font-style:italic;margin-bottom:3px">↳ 連泊 ${b.g}</div>
+        ${evIcons(b.ev)}<div class="staff-grid">${multiRow('STAY清掃','lstay',b.si_stay)}</div>${b.stay_taxi_time?`<span class="trtaxi">🚕${b.stay_taxi_time}</span>`:''}${b.stay_bf?`<div style="display:flex;align-items:center;gap:3px;margin-bottom:2px"><span class="slbl lbf">BF</span><span class="sname">${b.stay_bf_staff||'未定'}</span>${b.stay_bf_s?`<span style="font-size:8px;color:#666">${b.stay_bf_s}〜${b.stay_bf_e||''}</span>`:''}</div>`:''}${b.stay_dn?`<div style="display:flex;align-items:center;gap:3px;margin-bottom:2px"><span class="slbl ldn">DN</span><span class="sname">${b.stay_dn_staff||'未定'}</span>${b.stay_dn_s?`<span style="font-size:8px;color:#666">${b.stay_dn_s}〜${b.stay_dn_e||''}</span>`:''}</div>`:''}${b.stay_note?`<div style="font-size:8px;color:#555;margin-top:1px">📝${b.stay_note}</div>`:''}
+
+        ${b.stay_note?`<div style="font-size:8px;color:#555;padding:2px 4px;border-top:1px dashed #eee;margin-top:2px">✏️ ${b.stay_note}</div>`:''}
+    </td>`;
+  }
+  return`<td class="td-cell empty"></td>`;
+}
+
+
+// 各棟セル内の施設管理インライン表示
+function facInlineHtml(villa,dk){
+  const f=FAC[villa]&&FAC[villa][dk];
+  const active=f?FAC_ITEMS.filter(it=>f[it.id]&&f[it.id].on):[];
+  const note=f?f.note||'':'';
+  const hasGuest=villaHasGuest(villa,dk);
+  if(!active.length&&!note){
+    if(hasGuest){
+      // 宿泊中でも施設管理は設定可能（⚠️マーク付き）
+      return`<div class="fac-inline" onclick="openFacModal('${dk}','${villa}',event)"><span style="font-size:8px;color:#bbb">＋ 施設管理</span></div>`;
+    }
+    return`<div class="fac-inline" onclick="openFacModal('${dk}','${villa}',event)"><span style="font-size:8px;color:#6ab04c">＋ 施設管理（空室）</span></div>`;
+  }
+  return`<div class="fac-inline" onclick="openFacModal('${dk}','${villa}',event)">
+    <div style="display:flex;flex-wrap:wrap;gap:2px;align-items:center">
+      ${hasGuest?`<span style="font-size:8px;color:#f57f17">⚠️</span>`:''}
+      ${active.map(it=>'<div style="display:flex;align-items:center;gap:3px;margin-bottom:1px">'+'<span style="font-size:10px">'+it.icon+'</span>'+(FAC[villa]&&FAC[villa][dk]&&FAC[villa][dk][it.id]&&FAC[villa][dk][it.id].staff?'<span style="font-size:9px;font-weight:700;color:#333">'+FAC[villa][dk][it.id].staff+'</span>':'<span style="font-size:9px;color:#bbb">未定</span>')+'</div>').join('')}
+      ${note?`<span style="font-size:9px;padding:1px 5px;border-radius:4px;background:#f5f5f2;color:#555;font-weight:600">✏️${note}</span>`:''}
+    </div>
+  </div>`;
+}
+function facCellHtml(dk){
+  // 棟ごとに行表示
+  const ALL_V=VILLAS.concat(['Reception棟']);
+  const CELLS=buildCells();
+  let inner='';
+  ALL_V.forEach(v=>{
+    const f=FAC[v]&&FAC[v][dk];
+    const active=f?FAC_ITEMS.filter(it=>f[it.id]&&f[it.id].on):[];
+    const cd=CELLS[v]&&CELLS[v][dk];
+    const hasGuest=cd&&(cd.checkin||cd.stay||cd.out);
+    const vColor={YARABU:'#0F6E56',SANNIN:'#534AB7',BINDO:'#185FA5',GASHIMUNE:'#854F0B',MAANI:'#993C1D','Reception棟':'#3d6b5e'}[v]||'#333';
+    inner+=`<div onclick="openFacModal('${dk}','${v}',event)" style="display:flex;align-items:flex-start;gap:3px;margin-bottom:3px;cursor:pointer;padding:2px 3px;border-radius:4px;background:${active.length?'#f1f8f1':'transparent'}">
+      <span style="font-size:8px;font-weight:700;color:${vColor};min-width:56px;flex-shrink:0;padding-top:1px">${v.replace('Reception棟','R棟')}</span>
+      <span style="flex:1;display:flex;flex-wrap:wrap;gap:1px">
+        ${active.length
+          ? active.map(it=>`<span style="font-size:9px">${it.icon}</span>`).join('')
+          : `<span style="font-size:8px;color:#ccc">${hasGuest?'宿泊':'―'}</span>`}
+      </span>
+    </div>`;
+  });
+  return`<td class="fac-cell" style="padding:4px 5px;vertical-align:top">${inner}</td>`;
+}
+function rCellHtml(dk){
+  const r=getRD(dk);
+  return`<td class="td-cell r-cell" onclick="openRModal('${dk}')">
+    <div class="r-sec"><div class="r-sec-lbl">清掃</div>${(Array.isArray(r.rsi)?r.rsi:[r.rsi]).filter(x=>x).map(n=>sRow('内','lri',n)).join('')}${(Array.isArray(r.rso)?r.rso:[r.rso]).filter(x=>x).map(n=>sRow('外','lro',n)).join('')}</div>
+    <div class="r-sec"><div class="r-sec-lbl">共通作業</div>${sRow('BL','lbl',r.bl)}${sRow('WS','lws',r.ws)}</div>
+    ${r.note?`<div style="font-size:8px;color:#555;padding:2px 4px;background:#f9f9f9;border-top:1px dashed #eee;margin-top:2px">✏️${r.note}</div>`:''}
+  </td>`;
+}
+
+// 自動スケジュールボタンをシフトヘッダー上に表示（別途）
+function shiftCellHtml(dk){
+  const s=getSD(dk);
+  // 出勤スタッフ（シフトに割り当てられた人の一覧）
+  const workingSet=new Set();
+  SHIFT_TYPES.forEach(t=>{
+    const names=Array.isArray(s[t.id])?s[t.id]:(s[t.id]?[s[t.id]]:[]);
+    names.forEach(n=>{if(n)workingSet.add(n);});
+  });
+  if(s.front){
+    const fr=Array.isArray(s.front)?s.front:(s.front?[s.front]:[]);
+    fr.forEach(n=>{if(n)workingSet.add(n);});
+  }
+  // 不可スタッフ
+  const unavail=STAFF.filter(st=>isUnavail(st,dk));
+  // 出勤シフト表示
+  const entries=SHIFT_TYPES.filter(t=>s[t.id]&&(Array.isArray(s[t.id])?s[t.id].length:s[t.id]));
+  const shiftHtml=entries.map(t=>{
+    const names=Array.isArray(s[t.id])?s[t.id]:[s[t.id]];
+    return names.map(n=>`<div style="display:flex;align-items:center;gap:3px;margin-bottom:2px"><span class="sh-type-lbl" style="background:${t.color}">${t.id}</span><span style="font-size:9px">${t.time}</span><span style="font-size:10px;font-weight:600">${n}</span></div>`).join('');
+  }).join('');
+  // フロント表示
+  const frontNames=Array.isArray(s.front)?s.front:(s.front?[s.front]:[]);
+  const frontHtml=frontNames.length?`<div style="font-size:9px;padding:2px 5px;border-radius:4px;background:#e8f5e9;color:#1b5e20;margin-bottom:3px;font-weight:700">🏨 ${frontNames.join('・')}</div>`:'';
+  // 不可スタッフ表示
+  const unavHtml=unavail.length?`<div style="display:flex;flex-wrap:wrap;gap:2px;margin-top:4px;padding-top:3px;border-top:1px dashed #eee">${unavail.map(st=>'<span style="font-size:8px;padding:1px 5px;border-radius:3px;background:#ffebee;color:#c62828">🙅'+st+'</span>').join('')}</div>`:'';
+  // 出勤者バッジ（シフト未割当でも表示）
+  const workHtml=workingSet.size?`<div style="display:flex;flex-wrap:wrap;gap:2px;margin-bottom:3px">${[...workingSet].map(st=>'<span style="font-size:8px;padding:1px 5px;border-radius:3px;background:#e3f2fd;color:#1565c0;font-weight:600">✓'+st+'</span>').join('')}</div>`:'';
+  const isEmpty=!shiftHtml&&!frontHtml&&workingSet.size===0;
+  return`<td class="td-cell sh-cell" onclick="openShiftModal('${dk}')">
+    ${frontHtml}
+    ${shiftHtml||`<div style="font-size:9px;color:#ccc;text-align:center;padding:2px">シフト未入力</div>`}
+    ${unavHtml}
+  </td>`;
+}
+
+
+function chM(d){curM+=d;if(curM>12){curM=1;curY++}if(curM<1){curM=12;curY--}render();}
+
+function render(){
+  try{
+  document.getElementById('mlbl').textContent=`${curY}年${curM}月`;
+  const days=dim(curY,curM);const today=new Date();
+  const todayKey=key(today.getFullYear(),today.getMonth()+1,today.getDate());
+  const CELLS=buildCells();
+  let html=`<thead><tr>
+    <th class="th-day">日</th><th class="th-wk">曜</th>
+    <th class="th-y">YARABU</th><th class="th-s">SANNIN</th>
+    <th class="th-b">BINDO</th><th class="th-g">GASHIMUNE</th>
+    <th class="th-m">MAANI</th><th class="th-r">Reception棟</th>
+    <th class="th-sh">出勤 / フロント</th>
+  </tr></thead><tbody>`;
+  for(let d=1;d<=days;d++){
+    const dk=key(curY,curM,d);const dow=new Date(curY,curM-1,d).getDay();
+    const isToday=dk===todayKey;
+    const wc=dow===0?'sun':dow===6?'sat':'';
+    html+=`<tr class="${isToday?'today-row':''}">`;
+    // 不可スタッフ
+    const offList=STAFF.filter(st=>isUnavail(st,dk));
+    const offHtml=offList.map(st=>`<span class="off-chip">${st}</span>`).join('');
+    html+=`<td class="td-day ${wc}" style="padding:3px 2px">
+      <div style="font-size:13px;font-weight:700">${d}</div>
+      ${offHtml}
+    </td>`;
+    html+=`<td class="td-wk ${wc}">${WEEK[dow]}</td>`;
+    VILLAS.forEach(v=>{html+=buildCellHtml(dk,v,CELLS[v][dk]);});
+    html+=rCellHtml(dk);html+=shiftCellHtml(dk);html+='</tr>';
+  }
+  html+='</tbody>';
+  document.getElementById('grid').innerHTML=html;
+  }catch(err){
+    alert('renderエラー: '+err.message+'\n行: '+err.stack);
+    console.error(err);
+  }
+}
+
+function selHtml(id,cur,lbl,style){
+  const opts=STAFF_E.map(s=>`<option value="${s}"${cur===s?' selected':''}>${s||'未定'}</option>`).join('');
+  return`<div class="sg"><div class="slb"><span class="slb-b" style="${style}">${lbl}</span></div><select id="${id}">${opts}</select></div>`;
+}
+function multiCheckHtml(id,selected){
+  selected=selected||[];
+  return`<div class="multi-check-grid">`+STAFF.map(s=>{
+    const chk=selected.includes(s);
+    return`<label class="mc-lbl${chk?' checked':''}" id="mclbl-${id}-${s}"><input type="checkbox" class="mc-${id}" value="${s}" ${chk?'checked':''} onchange="this.closest('label').className='mc-lbl'+(this.checked?' checked':'')"> ${s}</label>`;
+  }).join('')+`</div>`;
+}
+function getMulti(cls){return[...document.querySelectorAll(`.${cls}:checked`)].map(el=>el.value);}
+let _mv='',_mdk='';
+function setTransport(val){
+  const b=BD[_mv][_mdk]&&BD[_mv][_mdk][0];if(!b)return;b.transport=val;
+  document.querySelectorAll('.tr-sel-btn').forEach(btn=>{
+    btn.className='tr-sel-btn';
+    if(val===''&&btn.textContent.includes('なし'))btn.className='tr-sel-btn sel-none';
+    if(val==='タクシー'&&btn.textContent.includes('タクシー'))btn.className='tr-sel-btn sel-taxi';
+    if(val==='レンタカー'&&btn.textContent.includes('レンタカー'))btn.className='tr-sel-btn sel-rent';
+  });
+}
+function openComboModal(outDk,prevDk,villa,e){
+  if(e)e.stopPropagation();
+  const ob=BD[villa][outDk]&&BD[villa][outDk][0];
+  const pb=BD[villa][prevDk]&&BD[villa][prevDk][0];
+  if(!ob||!pb)return;
+  const d=parseInt(outDk.split('-')[2]);
+  document.getElementById('mr').innerHTML=`
+  <div class="mov" onclick="closeM(event)"><div class="mbox" onclick="event.stopPropagation()" style="max-height:90vh;overflow-y:auto">
+    <div class="mtitle">${villa}　${curM}/${d}</div>
+    <div class="minfo" style="background:#fff8f0;border-left:3px solid #e65100">◀ OUT清掃 ＋ 🌅 IN清掃・設定</div>
+    <div class="msec first" style="color:#880e4f;border-top:none;padding-top:0">◀ OUT（${ob.g}）</div>
+    ${timeSelHtml('m-co',ob.co,'◀ チェックアウト時間','#880e4f')}
+    <div class="msec">🔴 OUT清掃担当（複数選択可）</div>${multiCheckHtml('si-out',ob.si_out)}
+    <div class="msec" style="color:#f57f17">🌅 IN準備（${pb.g}）</div>
+    <div class="msec">🟡 IN清掃担当（複数選択可）</div>${multiCheckHtml('si-in',pb.si_in)}
+    ${selHtml('m-setting',pb.setting,'🟠 セッティング担当','background:#fff3e0;color:#e65100;border:1px solid #ffcc80')}
+    <div class="msec">🌿 外部清掃（前日・複数選択可）</div>${multiCheckHtml('so-prev',pb.so_prev)}
+    <div class="mbtns"><button class="bcl" onclick="closeM()">閉じる</button><button class="bsv" onclick="saveCombo('${villa}','${outDk}','${prevDk}')">保存</button></div>
+  </div></div>`;
+}
+function saveCombo(villa,outDk,prevDk){
+  const ob=BD[villa][outDk]&&BD[villa][outDk][0];
+  const pb=BD[villa][prevDk]&&BD[villa][prevDk][0];
+  if(!ob||!pb)return;
+  const co=document.getElementById('m-co');if(co)ob.co=co.value;
+  ob.si_out=getMulti('mc-si-out');
+  pb.si_in=getMulti('mc-si-in');
+  const st=document.getElementById('m-setting');if(st)pb.setting=st.value;
+  pb.so_prev=getMulti('mc-so-prev');
+  saveGuestToDB(BD[villa][dk]&&BD[villa][dk][0]);
+  closeM();render();
+}
+
+function swNTab(e,tab){
+  if(e)e.stopPropagation();
+  ['guest','clean','fac'].forEach(t=>{
+    const p=document.getElementById('npane-'+t);
+    const b=document.getElementById('ntab-'+t);
+    if(!p||!b)return;
+    const on=(t===tab);
+    p.style.display=on?'block':'none';
+    b.style.color=on?'#1D9E75':'#bbb';
+    b.style.fontWeight=on?'700':'400';
+    b.style.borderBottomColor=on?'#1D9E75':'transparent';
+  });
+}
+
+function openNew(dk,villa,e){
+  if(e)e.stopPropagation();
+  _mv=villa;_mdk=dk;
+  try{
+    const d=parseInt(dk.split('-')[2]);
+    const dow=new Date(dk).getDay();
+    const WK=['日','月','火','水','木','金','土'];
+    document.getElementById('mr').innerHTML=
+      '<div class="mov" onclick="closeM(event)"><div class="mbox" onclick="event.stopPropagation()" style="max-height:90vh;overflow-y:auto">'
+      +'<div style="font-size:13px;font-weight:700;margin-bottom:6px">＋ 新規予約 '+villa+'</div>'
+      +'<div style="font-size:11px;color:#666;margin-bottom:10px;padding:6px 10px;background:#f5f5f2;border-radius:8px">'+curY+'年'+curM+'月'+d+'日（'+WK[dow]+'）</div>'
+      +'<div style="display:flex;border-bottom:2px solid #eee;margin-bottom:12px">'
+      +'<button id="ntab-guest" onclick="swNTab(event,\'guest\')" style="flex:1;padding:8px 4px;border:none;background:none;font-size:12px;font-weight:700;color:#1D9E75;border-bottom:3px solid #1D9E75;cursor:pointer;font-family:inherit;margin-bottom:-2px">👤 お客様</button>'
+      +'<button id="ntab-clean" onclick="swNTab(event,\'clean\')" style="flex:1;padding:8px 4px;border:none;background:none;font-size:12px;color:#bbb;border-bottom:3px solid transparent;cursor:pointer;font-family:inherit;margin-bottom:-2px">🧹 清掃</button>'
+      +'<button id="ntab-fac" onclick="swNTab(event,\'fac\')" style="flex:1;padding:8px 4px;border:none;background:none;font-size:12px;color:#bbb;border-bottom:3px solid transparent;cursor:pointer;font-family:inherit;margin-bottom:-2px">🌿 施設管理</button>'
+      +'</div>'
+      +'<div id="npane-guest">'
+      +'<div class="msec first">👤 お客様名</div>'+'<div style="position:relative">'+'<input class="tinput" id="n-guest" placeholder="カタカナで入力" oninput="onGuestInput(this.value)" autocomplete="off">'+'<div id="guest-suggest" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #ddd;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15);z-index:999;max-height:200px;overflow-y:auto"></div>'+'</div>'
+      +'<div class="msec">🌍 国籍・言語</div>'
+      +'<div style="display:flex;gap:5px;margin-bottom:6px">'
+      +'<div style="flex:1"><div style="font-size:10px;color:#666;margin-bottom:3px">国籍</div><input class="tinput" id="n-nationality" list="nat-list" placeholder="例：日本・アメリカ" autocomplete="off"></div>'
+      +'<div style="flex:1"><div style="font-size:10px;color:#666;margin-bottom:3px">言語</div><input class="tinput" id="n-language" list="lang-list" placeholder="例：日本語・英語" autocomplete="off"></div>'
+      +'</div>'
+      +'<div class="msec">💳 清算方法</div>'
+      +'<div style="display:flex;gap:8px;margin-bottom:6px">'
+      +'<label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;padding:8px 14px;border:2px solid #1D9E75;border-radius:10px;background:#e8f5f0;flex:1;justify-content:center"><input type="radio" name="n-payment" id="n-pay-pre" value="事前清算" checked style="accent-color:#1D9E75"> 💳 事前清算</label>'
+      +'<label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;padding:8px 14px;border:2px solid #ddd;border-radius:10px;background:#fafaf8;flex:1;justify-content:center"><input type="radio" name="n-payment" id="n-pay-loc" value="現地清算" style="accent-color:#e65100"> 🏠 現地清算</label>'
+      +'</div>'
+      +'<div class="msec">📋 予約情報</div>'
+      +'<div style="display:flex;gap:5px;margin-bottom:6px">'
+      +'<div style="flex:1"><div style="font-size:10px;color:#666;margin-bottom:3px">泊数</div><select id="n-nights" class="tinput">'+[1,2,3,4,5,6,7,10,14].map(n=>'<option value="'+n+'">'+n+'泊</option>').join('')+'</select></div>'
+      +'<div style="flex:1"><div style="font-size:10px;color:#666;margin-bottom:3px">食事</div><select id="n-meal" class="tinput"><option value="">なし</option><option value="BF">BF</option><option value="BFR">BFR</option><option value="DN">DN</option><option value="BF+DN">BF+DN</option></select></div>'
+      +'<div style="flex:1"><div style="font-size:10px;color:#666;margin-bottom:3px">DRT</div><select id="n-drt" class="tinput"><option value="">なし</option><option value="YES">YES</option></select></div>'
+      +'</div>'
+      +'<div class="msec">⏰ CI時間</div><select id="n-ci" class="tinput">'+timeOptsHtml('',5,23,30)+'</select>'
+      +'<div class="msec">🚗 交通手段</div>'
+      +'<div class="transport-sel">'
+      +'<button class="tr-sel-btn sel-none" onclick="setTransport(\'\')">― なし</button>'
+      +'<button class="tr-sel-btn" onclick="setTransport(\'タクシー\')">🚕 タクシー</button>'
+      +'<button class="tr-sel-btn" onclick="setTransport(\'レンタカー\')">🚗 レンタカー</button>'
+      +'</div>'
+      +'<div class="msec">🎯 今回の目的</div>'
+      +'<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:4px">'+PURPOSES.map(p=>'<label class="purbtn"><input type="checkbox" class="purp-chk-n" value="'+p.k+'"> '+p.lbl+'</label>').join('')+'</div>'
+      +'<div class="msec">🍽 食事・アレルギー情報</div>'
+      +'<input class="tinput" id="n-allergy" placeholder="🚫 アレルギー" style="margin-bottom:4px">'
+      +'<input class="tinput" id="n-dislike" placeholder="😣 苦手な食材" style="margin-bottom:4px">'
+      +'<input class="tinput" id="n-favorite" placeholder="😋 好きなもの">'
+      +'<div class="msec">🎉 イベント</div>'
+      +'<div class="ev-grid">'+EVS.map(ev=>'<label class="ev-chk-lbl"><input type="checkbox" class="ev-chk-n" value="'+ev.k+'"> '+ev.icon+' '+ev.k+'</label>').join('')+'</div>'
+      +'<input class="tinput" id="n-ev-time" placeholder="⏰ イベント時間" style="margin-top:6px;margin-bottom:4px">'
+      +'<input class="tinput" id="n-ev-note" placeholder="✏️ イベント詳細">'
+      +'<div class="msec">🍜 外食（店名・連絡先）</div>'
+      +'<textarea class="tinput" id="n-dineout" rows="2" style="resize:none" placeholder="例：海人食堂 090-XXXX-XXXX"></textarea>'
+      +'<div class="msec">📝 お客様の要望事項</div>'
+      +'<textarea class="tinput" id="n-request" rows="2" style="resize:none" placeholder="お客様からのご要望"></textarea>'
+      +'<div class="msec">🚕 TAXI情報</div>'
+      +taxiSectionHtml('n',null)
+      +'<div class="msec">🍳 BF / BFR 時間・担当</div>'
+      +'<div style="display:flex;gap:5px;margin-bottom:5px">'
+      +'<div style="flex:1"><select id="n-bf-type" class="tinput"><option value="">― なし</option><option value="BF">BF 朝食</option><option value="BFR">BFR ルームサービス</option></select></div>'
+      +'<div style="flex:1">'+selHtml('n-bf','','BF担当','background:#e8f5dc;color:#2e6b00')+'</div></div>'
+      +timeRangeHtml('n-bf-s','n-bf-e','','','BF時間帯','#2e6b00',7,10,30)
+      +'<div class="msec">🍽 DN 時間・担当</div>'
+      +'<div style="display:flex;gap:5px;margin-bottom:5px">'
+      +'<div style="flex:1"><select id="n-dn-yn" class="tinput"><option value="">― なし</option><option value="DN">DN あり</option></select></div>'
+      +'<div style="flex:1">'+selHtml('n-dn','','DN担当','background:#ddeeff;color:#0a3d8a')+'</div></div>'
+      +timeRangeHtml('n-dn-s','n-dn-e','','','DN時間帯','#0a3d8a',18,21,0)
+      +'<datalist id="nat-list"><option value="日本"><option value="アメリカ"><option value="オーストラリア"><option value="中国"><option value="韓国"><option value="台湾"><option value="イギリス"><option value="フランス"><option value="ドイツ"><option value="シンガポール"><option value="香港"><option value="タイ"><option value="インド"><option value="カナダ"></datalist>'+'<datalist id="lang-list"><option value="日本語"><option value="英語"><option value="中国語"><option value="韓国語"><option value="フランス語"><option value="ドイツ語"><option value="スペイン語"><option value="ポルトガル語"><option value="タイ語"></datalist>'
+      +'</div>'
+      +'<div id="npane-clean" style="display:none">'
+      +'<div class="msec first">🧹 IN清掃担当（複数可）</div>'
+      +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-top:4px">'+STAFF.map(s=>'<label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;padding:5px 8px;border:1px solid #eee;border-radius:8px;background:#fafaf8"><input type="checkbox" class="n-clean-chk" value="'+s+'" style="width:14px;height:14px;accent-color:#0F6E56"> '+s+'</label>').join('')+'</div>'
+      +selHtml('n-setting','','🟠 セッティング担当','background:#fff3e0;color:#e65100')
+      +selHtml('n-ext-clean','','🌿 外部清掃担当','background:#e3f2fd;color:#1565c0')
+      +'</div>'
+      +'<div id="npane-fac" style="display:none">'
+      +'<div class="msec first">🌿 施設管理 実施項目と担当者</div>'
+      +FAC_ITEMS.map(it=>'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;padding:8px;border:1px solid #eee;border-radius:8px"><input type="checkbox" id="nfac-'+it.id+'" style="width:16px;height:16px;accent-color:#2e7d32;cursor:pointer"><span style="font-size:12px;font-weight:600;flex:1">'+it.icon+' '+it.label+'</span>'+selHtml('nfac-staff-'+it.id,'','担当','background:#e8f5e9;color:#1b5e20')+'</div>').join('')
+      +'<div class="msec">✏️ 自由書き込み</div>'
+      +'<textarea class="tinput" id="n-fac-note" rows="2" style="resize:none" placeholder="追加作業・メモ"></textarea>'
+      +'</div>'
+      +'<div class="mbtns"><button class="bcl" onclick="closeM()">閉じる</button>'
+      +'<button class="bsv" onclick="saveNew(_mv,_mdk)">✅ 予約登録</button>'
+      +'</div></div></div>';
+  }catch(err){alert('予約入力エラー: '+err.message);console.error(err);}
+}
+
+function saveNew(villa,dk){
+  if(!BD[villa])BD[villa]={};
+  if(!BD[villa][dk])BD[villa][dk]=[];
+  const n=parseInt((document.getElementById('n-nights')||{}).value||'1')||1;
+  const meal=(document.getElementById('n-meal')||{}).value||'';
+  const drt=(document.getElementById('n-drt')||{}).value==='YES';
+  const b={
+    g:(document.getElementById('n-guest')||{}).value||'',
+    n,m:meal,drt,
+    nationality:(document.getElementById('n-nationality')||{}).value||'',
+    language:(document.getElementById('n-language')||{}).value||'',
+    payment:document.getElementById('n-pay-pre')&&document.getElementById('n-pay-pre').checked?'事前清算':'現地清算',
+    ci:(document.getElementById('n-ci')||{}).value||'',
+    co:'',transport:_transport||'',
+    purpose:[...document.querySelectorAll('.purp-chk-n:checked')].map(el=>el.value),
+    allergy:(document.getElementById('n-allergy')||{}).value||'',
+    dislike:(document.getElementById('n-dislike')||{}).value||'',
+    favorite:(document.getElementById('n-favorite')||{}).value||'',
+    ev:[...document.querySelectorAll('.ev-chk-n:checked')].map(el=>el.value),
+    ev_time:(document.getElementById('n-ev-time')||{}).value||'',
+    ev_note:(document.getElementById('n-ev-note')||{}).value||'',
+    activities:getActRows(),
+    dineout:(document.getElementById('n-dineout')||{}).value||'',
+    request:(document.getElementById('n-request')||{}).value||'',
+    taxi_time:(document.getElementById('n-taxi-time')||{}).value||'',
+    taxi_contacts:getTaxiContacts('n'),
+    bf:(document.getElementById('n-bf')||{}).value||'',
+    bf_type:(document.getElementById('n-bf-type')||{}).value||'',
+    bf_start:(document.getElementById('n-bf-s')||{}).value||'',
+    bf_end:(document.getElementById('n-bf-e')||{}).value||'',
+    dn:(document.getElementById('n-dn')||{}).value||'',
+    dn_type:(document.getElementById('n-dn-yn')||{}).value||'',
+    dn_start:(document.getElementById('n-dn-s')||{}).value||'',
+    dn_end:(document.getElementById('n-dn-e')||{}).value||'',
+    si_in:[...document.querySelectorAll('.n-clean-chk:checked')].map(el=>el.value),
+    setting:(document.getElementById('n-setting')||{}).value||'',
+    so:[(document.getElementById('n-ext-clean')||{}).value||''].filter(x=>x),
+    si_stay:[],si_out:[],so_prev:[],
+    stay_bf:'',stay_dn:'',stay_bf_s:'',stay_bf_e:'',stay_dn_s:'',stay_dn_e:'',
+    nationality_raw:'',language_raw:'',repeat:'',
+    guests:{males:[],females:[],children:[]},
+    bf:'',dn:'',
+    bf_start:'',bf_end:'',dn_start:'',dn_end:''
+  };
+  // ゲスト情報
+  b.nationality=(document.getElementById('n-nationality')||{}).value||'';
+  b.language=(document.getElementById('n-language')||{}).value||'';
+  b.bf=(document.getElementById('n-bf')||{}).value||'';
+  b.dn=(document.getElementById('n-dn')||{}).value||'';
+  b.bf_start=(document.getElementById('n-bf-s')||{}).value||'';
+  b.bf_end=(document.getElementById('n-bf-e')||{}).value||'';
+  b.dn_start=(document.getElementById('n-dn-s')||{}).value||'';
+  b.dn_end=(document.getElementById('n-dn-e')||{}).value||'';
+  // 施設管理
+  const nFac=getFAC(villa,dk);
+  FAC_ITEMS.forEach(it=>{
+    const cb=document.getElementById('nfac-'+it.id);
+    const sel=document.getElementById('nfac-staff-'+it.id);
+    if(cb)nFac[it.id].on=cb.checked;
+    if(sel)nFac[it.id].staff=sel.value;
+  });
+  const nFacNote=document.getElementById('n-fac-note');
+  if(nFacNote)nFac.note=nFacNote.value.trim();
+
+  BD[villa][dk].push(b);
+  saveGuestToDB(b);
+  _transport='';
+  closeM();render();
+}
+function openModal(parentDk,villa,cellType,e){
+  if(e)e.stopPropagation();
+  const bks=BD[villa][parentDk];if(!bks||!bks[0])return;
+  const b=bks[0];if(b.g==='休館日')return;
+  const d=parseInt(parentDk.split('-')[2]);
+  const m=b.m||'';const hasBF=m.includes('BF')||m.includes('BFR');const hasDN=m.includes('DN');
+  const ev=b.ev||[];_mv=villa;_mdk=parentDk;
+  let typeLabel='',content='';
+  if(cellType==='checkout'){
+    const coD=new Date(parentDk);coD.setDate(coD.getDate()+b.n);
+    typeLabel=`◀ CO（${coD.getMonth()+1}/${coD.getDate()}日）`;
+    content=`${timeSelHtml('m-co',b.co,'◀ チェックアウト時間','#880e4f')}
+      <div class="msec">🧹 OUT清掃担当（複数選択可）</div>${multiCheckHtml('si-out',b.si_out,parentDk)}
+      <div class="msec">🚕 TAXI情報</div>
+      ${taxiSectionHtml('co',b)}
+      <div class="msec">🍳 BF / BFR</div>
+      <div style="display:flex;gap:5px;margin-bottom:5px">
+        <div style="flex:1"><select id="co-bf-type" class="tinput"><option value="">― なし</option><option value="BF" ${(b.co_bf_type||'')==='BF'?'selected':''}>BF 朝食</option><option value="BFR" ${(b.co_bf_type||'')==='BFR'?'selected':''}>BFR ルームサービス</option></select></div>
+        <div style="flex:1">${selHtml('co-bf',b.co_bf||'','BF担当','background:#e8f5dc;color:#2e6b00')}</div>
+      </div>
+      ${timeRangeHtml('co-bf-s','co-bf-e',b.co_bf_s||'',b.co_bf_e||'','BF時間帯','#2e6b00',7,10,30)}
+      <div class="msec">📝 特記事項</div>
+      <textarea class="tinput" id="co-note" rows="2" style="resize:none" placeholder="チェックアウト当日の特記事項">${b.co_note||''}</textarea>`;
+  } else if(cellType==='prev'){
+    const prevD=new Date(parentDk);prevD.setDate(prevD.getDate()-1);
+    typeLabel=`🌅 前日準備（${prevD.getMonth()+1}/${prevD.getDate()}日）`;
+    content=`<div class="msec first">🧹 IN清掃 ＋ セッティング</div>
+      <div class="msec">🟡 IN清掃担当（複数選択可）</div>${multiCheckHtml('si-in',b.si_in)}
+      ${selHtml('m-setting',b.setting,'🟠 セッティング','background:#fff3e0;color:#e65100;border:1px solid #ffcc80')}
+      <div class="msec">🌿 外部清掃（複数選択可）</div>${multiCheckHtml('so-prev',b.so_prev)}`;
+  } else if(cellType==='checkin'){
+    typeLabel=`▶ チェックイン（${d}日）`;
+    const tr=b.transport||'';
+    const evGrid=`<div class="ev-grid">`+EVS.map(e=>`<label class="ev-chk-lbl"><input type="checkbox" value="${e.k}" ${ev.includes(e.k)?'checked':''}> ${e.icon} ${e.k}</label>`).join('')+`</div>`;
+    content=`
+      <div id="guest-editor">${buildGuestEditor(b.guests||{males:[],females:[],children:[]})}</div>
+      <div class="msec">🌍 国籍・言語</div>
+      <div style="display:flex;gap:6px;margin-bottom:6px">
+        <div style="flex:1"><div style="font-size:10px;color:#666;margin-bottom:3px">国籍</div>
+          <input class="tinput" id="m-nationality" list="nat-list" value="${b.nationality||''}" placeholder="例：日本・アメリカ">
+        </div>
+        <div style="flex:1"><div style="font-size:10px;color:#666;margin-bottom:3px">言語</div>
+          <input class="tinput" id="m-language" list="lang-list" value="${b.language||''}" placeholder="例：日本語・英語">
+        </div>
+      </div>
+      <div class="msec">💳 清算方法</div>
+      <div style="display:flex;gap:8px;margin-bottom:6px">
+        <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;padding:8px 14px;border:2px solid ${(b.payment||'事前清算')==='事前清算'?'#1D9E75':'#ddd'};border-radius:10px;background:${(b.payment||'事前清算')==='事前清算'?'#e8f5f0':'#fafaf8'};flex:1;justify-content:center">
+          <input type="radio" name="m-payment" id="m-pay-pre" value="事前清算" ${(b.payment||'事前清算')==='事前清算'?'checked':''} style="accent-color:#1D9E75"> 💳 事前清算
+        </label>
+        <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;padding:8px 14px;border:2px solid ${b.payment==='現地清算'?'#e65100':'#ddd'};border-radius:10px;background:${b.payment==='現地清算'?'#fff3e0':'#fafaf8'};flex:1;justify-content:center">
+          <input type="radio" name="m-payment" id="m-pay-loc" value="現地清算" ${b.payment==='現地清算'?'checked':''} style="accent-color:#e65100"> 🏠 現地清算
+        </label>
+      </div>
+      <div class="msec">🔄 リピーター情報</div>
+      <div style="display:flex;gap:8px;margin-bottom:6px">
+        <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;padding:5px 10px;border:1.5px solid ${b.repeat?'#ddd':'#534AB7'};border-radius:20px;background:${b.repeat?'#fafaf8':'#f0f4ff'}"><input type="radio" name="m-rtype" id="m-rt-first" value="first" ${!b.repeat?'checked':''} style="accent-color:#534AB7"> 初回</label>
+        <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;padding:5px 10px;border:1.5px solid ${b.repeat?'#534AB7':'#ddd'};border-radius:20px;background:${b.repeat?'#f0f4ff':'#fafaf8'}"><input type="radio" name="m-rtype" id="m-rt-rep" value="repeat" ${b.repeat?'checked':''} style="accent-color:#534AB7"> リピーター</label>
+      </div>
+      <input class="tinput" id="m-repeat" value="${b.repeat||''}" placeholder="詳細（例：3回目）">
+      ${timeSelHtml('m-ci',b.ci,'▶ チェックイン時間','#1b5e20')}
+      <div class="msec">🚗 交通手段</div>
+      <div class="transport-sel">
+        <button class="tr-sel-btn${tr===''?' sel-none':''}" onclick="setTransport('')">― なし</button>
+        <button class="tr-sel-btn${tr==='タクシー'?' sel-taxi':''}" onclick="setTransport('タクシー')">🚕 タクシー</button>
+        <button class="tr-sel-btn${tr==='レンタカー'?' sel-rent':''}" onclick="setTransport('レンタカー')">🚗 レンタカー</button>
+      </div>
+      <div class="msec">🎯 今回の目的</div>
+      <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:4px">${PURPOSES.map(p=>`<label class="purbtn"><input type="checkbox" class="purp-chk" value="${p.k}" ${(b.purpose||[]).includes(p.k)?'checked':''}> ${p.lbl}</label>`).join('')}</div>
+      <div class="msec">🍽 食事・アレルギー情報</div>
+      <input class="tinput" id="m-allergy" value="${b.allergy||''}" placeholder="🚫 アレルギー" style="margin-bottom:4px">
+      <input class="tinput" id="m-dislike" value="${b.dislike||''}" placeholder="😣 苦手な食材" style="margin-bottom:4px">
+      <input class="tinput" id="m-favorite" value="${b.favorite||''}" placeholder="😋 好きなもの">
+      <div class="msec">🎉 イベント</div>${evGrid}
+      <input class="tinput" id="m-ev-time" value="${b.ev_time||''}" placeholder="⏰ イベント時間" style="margin-top:6px;margin-bottom:4px">
+      <input class="tinput" id="m-ev-note" value="${b.ev_note||''}" placeholder="✏️ イベント詳細">
+      <div class="msec">🍜 外食（店名・連絡先）</div>
+      <textarea class="tinput" id="m-dineout" rows="2" style="resize:none" placeholder="例：海人食堂">${b.dineout||''}</textarea>
+      <div class="msec">📝 お客様の要望事項</div>
+      <textarea class="tinput" id="m-request" rows="2" style="resize:none">${b.request||''}</textarea>
+      <div class="msec">🚕 TAXI情報</div>
+      ${taxiSectionHtml('m',b)}
+      <div class="msec">🧹 IN清掃担当（複数可）</div>
+      ${multiCheckHtml('si-in',b.si_in,parentDk)}
+      <div class="msec">🌿 外部清掃担当（複数可）</div>
+      ${multiCheckHtml('so',b.so,parentDk)}`;
+  } else if(cellType==='stay'){
+    typeLabel='↳ 連泊中';
+    content=`<div class="msec first">🧹 STAY清掃担当（複数選択可）</div>${multiCheckHtml('si-stay',b.si_stay,parentDk)}<div class="msec">🚕 TAXI情報</div>${taxiSectionHtml('stay',b)}<div class="msec">🍳 BF / BFR 時間・担当</div><div style="display:flex;gap:5px;margin-bottom:5px"><div style="flex:1"><select id="stay-bf-type" class="tinput"><option value="">― なし</option><option value="BF" ${b.stay_bf==='BF'?'selected':''}>BF 朝食</option><option value="BFR" ${b.stay_bf==='BFR'?'selected':''}>BFR ルームサービス</option></select></div><div style="flex:1">${selHtml('stay-bf-staff',b.stay_bf_staff||'','BF担当','background:#e8f5dc;color:#2e6b00')}</div></div>${timeRangeHtml('stay-bf-s','stay-bf-e',b.stay_bf_s||'',b.stay_bf_e||'','BF時間帯','#2e6b00',7,10,30)}<div class="msec">🍽 DN 時間・担当</div><div style="display:flex;gap:5px;margin-bottom:5px"><div style="flex:1"><select id="stay-dn-yn" class="tinput"><option value="">― なし</option><option value="DN" ${b.stay_dn?'selected':''}>DN あり</option></select></div><div style="flex:1">${selHtml('stay-dn-staff',b.stay_dn_staff||'','DN担当','background:#ddeeff;color:#0a3d8a')}</div></div>${timeRangeHtml('stay-dn-s','stay-dn-e',b.stay_dn_s||'',b.stay_dn_e||'','DN時間帯','#0a3d8a',18,21,0)}<div class="msec">📝 連泊中の要望・特記事項</div><textarea class="tinput" id="stay-note" rows="2" style="resize:none" placeholder="連泊中の要望・メモ">${b.stay_note||''}</textarea>`;
+  }
+  document.getElementById('mr').innerHTML=`
+  <div class="mov" onclick="closeM(event)"><div class="mbox" onclick="event.stopPropagation()" style="max-height:90vh;overflow-y:auto">
+    <div class="mtitle">${villa}</div>
+    <div class="minfo"><span style="font-size:10px;color:#888">${typeLabel}</span><br><strong>${b.g}</strong>　${b.n}泊　${b.m||''}${b.drt?' / DRT':''}</div>
+    ${content}
+    <div class="mbtns"><button class="bcl" onclick="closeM()">閉じる</button><button class="bsv" onclick="saveModal('${villa}','${parentDk}','${cellType}',${hasBF?1:0},${hasDN?1:0})">保存</button></div>
+  </div></div>`;
+}
+function countGuestVillas(dk){
+  // その日に宿泊客がいる棟の数
+  return VILLAS.filter(v=>{
+    const cells=buildCells();
+    const cd=cells[v]&&cells[v][dk];
+    if(!cd)return false;
+    return cd.checkin||cd.stay||(cd.out&&!cd.prev);
+  }).length;
+}
+
+function autoScheduleFac(e){
+  e.stopPropagation();
+  const days=dim(curY,curM);
+  const CELLS=buildCells();
+  const ALL_V=VILLAS.concat(['Reception棟']);
+
+  // 棟ごとに14日ごとの最適日を選ぶ
+  const proposedByVilla={};
+  ALL_V.forEach(v=>{
+    const proposed=[];
+    let nextTarget=1;
+    while(nextTarget<=days){
+      const window=[];
+      for(let di=Math.max(1,nextTarget-3);di<=Math.min(days,nextTarget+3);di++){
+        const dk=key(curY,curM,di);
+        const hasGuest=villaHasGuest(v,dk);
+        window.push({d:di,dk,hasGuest});
+      }
+      // 空室の日を優先
+      const empty=window.filter(x=>!x.hasGuest);
+      const best=empty.length?empty[Math.floor(empty.length/2)]:window[Math.floor(window.length/2)];
+      proposed.push(best);
+      nextTarget=best.d+14;
+    }
+    proposedByVilla[v]=proposed;
+  });
+
+  // プレビュー：棟ごとに表示
+  const vColor={YARABU:'#0F6E56',SANNIN:'#534AB7',BINDO:'#185FA5',GASHIMUNE:'#854F0B',MAANI:'#993C1D','Reception棟':'#3d6b5e'};
+  const preview=ALL_V.map(v=>{
+    const rows=proposedByVilla[v].map(p=>{
+      const dt=new Date(p.dk);const dow=WEEK[dt.getDay()];
+      const st=p.hasGuest
+        ?'<span style="font-size:10px;color:#f57f17">⚠️宿泊あり</span>'
+        :'<span style="font-size:10px;color:#2e7d32">✅空室</span>';
+      return`<span style="font-size:11px;margin-right:8px">${curM}/${p.d}(${dow}) ${st}</span>`;
+    }).join('');
+    return`<div style="margin-bottom:10px;padding:8px 10px;border:1px solid #eee;border-radius:8px;background:#fafaf8">
+      <div style="font-size:11px;font-weight:700;color:${vColor[v]};margin-bottom:5px">${v}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:4px">${rows}</div>
+    </div>`;
+  }).join('');
+
+  document.getElementById('mr').innerHTML=`
+  <div class="mov" onclick="closeM(event)"><div class="mbox" onclick="event.stopPropagation()" style="max-height:90vh;overflow-y:auto">
+    <div class="mtitle">⚡ 棟別 自動スケジュール提案</div>
+    <div style="font-size:11px;color:#666;margin-bottom:12px">各棟ごとに14日ごとの空室日を選定。確定後に担当者を入力できます。</div>
+    ${preview}
+    <div class="mbtns">
+      <button class="bcl" onclick="closeM()">キャンセル</button>
+      <button class="bsv" onclick="confirmAutoFac(${JSON.stringify(proposedByVilla)})">この日程で確定</button>
+    </div>
+  </div></div>`;
+}
+
+function confirmAutoFac(proposedByVilla){
+  // 棟別にFACをリセット・設定
+  VILLAS.concat(['Reception棟']).forEach(v=>{FAC[v]={};});
+  Object.entries(proposedByVilla).forEach(([v,days])=>{
+    days.forEach(p=>{
+      const f=getFAC(v,p.dk);
+      FAC_ITEMS.forEach(it=>{f[it.id].on=true;f[it.id].staff='';});
+    });
+  });
+  closeM();render();
+  const st=document.getElementById('status');
+  st.style.display='block';
+  st.textContent='✅ 棟別施設管理スケジュールを設定しました。各棟の日付をタップして担当者を入力してください。';
+}
+
+function openFacModal(dk,villa,e){
+  if(e)e.stopPropagation();
+  const f=getFAC(villa,dk);
+  const d=parseInt(dk.split('-')[2]);
+  const dow=new Date(dk).getDay();
+  const hasGuest=villaHasGuest(villa,dk);
+  const guestWarn=hasGuest?`<div style="background:#fff8e1;border-radius:8px;padding:7px 10px;margin-bottom:10px;font-size:11px;color:#f57f17">⚠️ この日は宿泊あり。確認の上スケジュールしてください</div>`:'';
+
+  const rows=FAC_ITEMS.map(it=>{
+    const item=f[it.id];
+    const opts=STAFF_E.map(s=>`<option value="${s}"${item.staff===s?' selected':''}>${s||'担当未定'}</option>`).join('');
+    return`<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding:8px 10px;border:1px solid #eee;border-radius:8px;background:${item.on?'#f1f8f1':'#fafaf8'}">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;flex:1">
+        <input type="checkbox" id="fac-${it.id}" ${item.on?'checked':''} style="width:16px;height:16px;accent-color:#2e7d32;cursor:pointer">
+        <span style="font-size:12px;padding:4px 10px;border-radius:5px;font-weight:700;display:inline-block;background:${it.bg};color:${it.col}">${it.icon} ${it.label}</span>
+      </label>
+      <select id="fac-staff-${it.id}" style="font-size:12px;padding:5px;border:1px solid #ddd;border-radius:6px;font-family:inherit;width:90px">${opts}</select>
+    </div>`;
+  }).join('');
+
+  document.getElementById('mr').innerHTML=`
+  <div class="mov" onclick="closeM(event)"><div class="mbox" onclick="event.stopPropagation()" style="max-height:90vh;overflow-y:auto">
+    <div class="mtitle">🌿 施設管理　${curM}/${d}（${WEEK[dow]}）</div>
+    ${guestWarn}
+    <div style="font-size:11px;color:#666;margin-bottom:10px">実施する項目にチェックして担当者を選択</div>
+    ${rows}
+    <div class="msec" style="margin-top:10px">✏️ 自由書き込み</div>
+    <textarea class="tinput" id="fac-note" rows="3" style="resize:none" placeholder="追加作業・特記事項・メモ">${f.note||''}</textarea>
+    <div class="mbtns"><button class="bcl" onclick="closeM()">閉じる</button><button class="bsv" onclick="saveFac('${villa}','${dk}')">保存</button></div>
+  </div></div>`;
+}
+function saveFac(villa,dk){
+  const f=getFAC(villa,dk);
+  FAC_ITEMS.forEach(it=>{
+    const cb=document.getElementById('fac-'+it.id);
+    const sel=document.getElementById('fac-staff-'+it.id);
+    if(cb)f[it.id].on=cb.checked;
+    if(sel)f[it.id].staff=sel.value;
+  });
+  const nt=document.getElementById('fac-note');
+  if(nt)f.note=nt.value.trim();
+  closeM();render();
+}
+function openRModal(dk){
+  const r=getRD(dk);const d=parseInt(dk.split('-')[2]);const dow=new Date(dk).getDay();
+  document.getElementById('mr').innerHTML=`
+  <div class="mov" onclick="closeM(event)"><div class="mbox" onclick="event.stopPropagation()" style="max-height:90vh;overflow-y:auto">
+    <div class="mtitle">${curM}/${d}（${WEEK[dow]}） Reception棟</div>
+    <div class="msec first">🧹 R棟清掃</div>
+    ${selHtml('r-si',r.rsi,'内 内部清掃','background:#fbe9e7;color:#bf360c')}
+    ${selHtml('r-so',r.rso,'外 外部清掃','background:#e8eaf6;color:#283593')}
+    <div class="msec">🌿 共通作業</div>
+    ${selHtml('r-bl',r.bl,'🍃 ブロア','background:#e8f4e8;color:#1b5e20')}
+    ${selHtml('r-ws',r.ws,'💧 誘導路洗い','background:#e3f2fd;color:#0d47a1')}
+    <div class="msec" style="margin-top:10px">✏️ 自由書き込み</div>
+    <textarea class="tinput" id="r-note" rows="3" style="resize:none" placeholder="追加作業・特記事項・メモ">${r.note||''}</textarea>
+    <div class="mbtns"><button class="bcl" onclick="closeM()">閉じる</button><button class="bsv" onclick="saveRModal('${dk}')">保存</button></div>
+  </div></div>`;
+}
+function openShiftModal(dk){
+  const s=getSD(dk);
+  const d=parseInt(dk.split('-')[2]);
+  const dow=new Date(dk).getDay();
+  const offList=STAFF.filter(st=>isUnavail(st,dk));
+  const offBanner=offList.length?'<div style="background:#ffeeee;border-radius:8px;padding:7px 10px;margin-bottom:10px;font-size:11px;color:#cc3333"><strong>🙅 本日不可：</strong>'+offList.join('　')+'</div>':'';
+  const frontCur=Array.isArray(s.front)?s.front:(s.front?[s.front]:[]);
+  const frontChks=STAFF.map(st=>{
+    const off=isUnavail(st,dk);const chk=frontCur.includes(st);
+    return '<label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;padding:4px 8px;border-radius:6px;background:'+(chk?'#e8f5e9':'#f5f5f5')+';margin:2px">'
+      +'<input type="checkbox" class="sh-chk-front" value="'+st+'" '+(chk?'checked ':'')+' style="accent-color:#1b5e20;width:14px;height:14px"> '+st+(off?' 🙅':'')+'</label>';
+  }).join('');
+  const shRows=SHIFT_TYPES.map(t=>{
+    const cur=Array.isArray(s[t.id])?s[t.id]:(s[t.id]?[s[t.id]]:[]);
+    const chks=STAFF.map(st=>{
+      const off=isUnavail(st,dk);const chk=cur.includes(st);
+      return '<label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;padding:4px 8px;border-radius:6px;background:'+(chk?t.color+'44':'#f5f5f5')+';margin:2px">'
+        +'<input type="checkbox" class="sh-chk-'+t.id+'" value="'+st+'" '+(chk?'checked ':'')+' style="accent-color:'+t.color+';width:14px;height:14px"> '+st+(off?' 🙅':'')+'</label>';
+    }).join('');
+    return '<div style="margin-bottom:10px;padding:10px;border:1px solid #eee;border-radius:10px">'
+      +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'
+      +'<div class="sh-type-lbl" style="background:'+t.color+'">'+t.id+'</div>'
+      +'<span class="sh-time-lbl">'+t.time+'</span></div>'
+      +'<div style="display:flex;flex-wrap:wrap">'+chks+'</div></div>';
+  }).join('');
+  document.getElementById('mr').innerHTML=
+    '<div class="mov" onclick="closeM(event)"><div class="mbox" onclick="event.stopPropagation()" style="max-height:85vh;overflow-y:auto">'
+    +'<div class="mtitle">'+curM+'/'+d+'（'+WEEK[dow]+'） 出勤 / フロント</div>'
+    +offBanner
+    +'<div class="msec first">🏨 フロント担当（複数可）</div>'
+    +'<div style="display:flex;flex-wrap:wrap;margin-bottom:10px">'+frontChks+'</div>'
+    +'<div class="msec">👥 出勤シフト</div>'+shRows
+    +'<div class="mbtns"><button class="bcl" onclick="closeM()">閉じる</button>'
+    +'<button class="bsv" onclick="saveShift(\''+ dk +'\')">保存</button></div>'
+    +'</div></div>';
+}
+function closeM(e){if(!e||e.target===e.currentTarget)document.getElementById('mr').innerHTML='';}
+function saveModal(villa,dk,cellType,hasBF,hasDN){
+  const b=BD[villa][dk]&&BD[villa][dk][0];if(!b)return;
+  if(cellType==='checkout'){
+    const co=document.getElementById('m-co');if(co)b.co=co.value;
+    b.si_out=getMulti('mc-si-out');
+    const coBfType=document.getElementById('co-bf-type');if(coBfType)b.co_bf_type=coBfType.value;
+    const coBf=document.getElementById('co-bf');if(coBf)b.co_bf=coBf.value;
+    const coBfS=document.getElementById('co-bf-s');if(coBfS)b.co_bf_s=coBfS.value;
+    const coBfE=document.getElementById('co-bf-e');if(coBfE)b.co_bf_e=coBfE.value;
+    const coTaxiTime=document.getElementById('co-taxi-time');if(coTaxiTime)b.co_taxi_time=coTaxiTime.value;
+    b.co_taxi_contacts=getTaxiContacts('co');
+    const coNote=document.getElementById('co-note');if(coNote)b.co_note=coNote.value.trim();
+  }
+  else if(cellType==='prev'){b.si_in=getMulti('mc-si-in');const c=document.getElementById('m-setting');if(c)b.setting=c.value;b.so_prev=getMulti('mc-so-prev');}
+  else if(cellType==='checkin'){
+    const ci=document.getElementById('m-ci');if(ci)b.ci=ci.value;
+    b.ev=EVS.map(e=>e.k).filter(k=>{const el=document.querySelector(`#mr input[value="${k}"]`);return el&&el.checked;});
+    const mBfEl=document.getElementById('m-bf');if(mBfEl)b.bf=mBfEl.value;
+    const mBfType=document.getElementById('m-bf-type');if(mBfType)b.bf_type=mBfType.value;
+    const mBfS=document.getElementById('m-bf-s');if(mBfS)b.bf_start=mBfS.value;
+    const mBfE=document.getElementById('m-bf-e');if(mBfE)b.bf_end=mBfE.value;
+    const mDnEl=document.getElementById('m-dn');if(mDnEl)b.dn=mDnEl.value;
+    const mDnType=document.getElementById('m-dn-type');if(mDnType)b.dn_type=mDnType.value;
+    const mDnS=document.getElementById('m-dn-s');if(mDnS)b.dn_start=mDnS.value;
+    const mDnE=document.getElementById('m-dn-e');if(mDnE)b.dn_end=mDnE.value;
+    b.so=getMulti('mc-so');
+    b.guests=collectGuests();
+    // 追加フィールド保存
+    const mNat=document.getElementById('m-nationality');if(mNat)b.nationality=mNat.value.trim();
+    const mLang=document.getElementById('m-language');if(mLang)b.language=mLang.value.trim();
+    const mPayPre=document.getElementById('m-pay-pre');if(mPayPre)b.payment=mPayPre.checked?'事前清算':'現地清算';
+    const mRepeat=document.getElementById('m-repeat');if(mRepeat)b.repeat=mRepeat.value.trim();
+    const mRtRep=document.getElementById('m-rt-rep');if(mRtRep&&mRtRep.checked)b.repeat_type='repeat';else b.repeat_type='first';
+    b.purpose=[...document.querySelectorAll('.purp-chk:checked')].map(el=>el.value);
+    const mAlg=document.getElementById('m-allergy');if(mAlg)b.allergy=mAlg.value.trim();
+    const mDis=document.getElementById('m-dislike');if(mDis)b.dislike=mDis.value.trim();
+    const mFav=document.getElementById('m-favorite');if(mFav)b.favorite=mFav.value.trim();
+    const mDout=document.getElementById('m-dineout');if(mDout)b.dineout=mDout.value.trim();
+    const mReq=document.getElementById('m-request');if(mReq)b.request=mReq.value.trim();
+    const mTaxi=document.getElementById('m-taxi-time');if(mTaxi)b.taxi_time=mTaxi.value;
+    b.taxi_contacts=getTaxiContacts('m');
+    const mEvTime=document.getElementById('m-ev-time');if(mEvTime)b.ev_time=mEvTime.value.trim();
+    const mEvNote=document.getElementById('m-ev-note');if(mEvNote)b.ev_note=mEvNote.value.trim();
+    saveGuestToDB(b);
+  }
+  else if(cellType==='stay'){
+    b.si_stay=getMulti('mc-si-stay');
+    const stBfType=document.getElementById('stay-bf-type');if(stBfType)b.stay_bf=stBfType.value;
+    const stBfStaff=document.getElementById('stay-bf-staff');if(stBfStaff)b.stay_bf_staff=stBfStaff.value;
+    const stBfS=document.getElementById('stay-bf-s');if(stBfS)b.stay_bf_s=stBfS.value;
+    const stBfE=document.getElementById('stay-bf-e');if(stBfE)b.stay_bf_e=stBfE.value;
+    const stDnYn=document.getElementById('stay-dn-yn');if(stDnYn)b.stay_dn=stDnYn.value;
+    const stDnStaff=document.getElementById('stay-dn-staff');if(stDnStaff)b.stay_dn_staff=stDnStaff.value;
+    const stDnS=document.getElementById('stay-dn-s');if(stDnS)b.stay_dn_s=stDnS.value;
+    const stDnE=document.getElementById('stay-dn-e');if(stDnE)b.stay_dn_e=stDnE.value;
+    const stTaxiTime=document.getElementById('stay-taxi-time');if(stTaxiTime)b.stay_taxi_time=stTaxiTime.value;
+    b.stay_taxi_contacts=getTaxiContacts('stay');
+    const stNote=document.getElementById('stay-note');if(stNote)b.stay_note=stNote.value.trim();
+  }
+  closeM();render();
+}
+function saveRModal(dk){
+  const r=getRD(dk);
+  r.rsi=[...document.querySelectorAll('.rsi-chk:checked')].map(el=>el.value);
+  r.rso=[...document.querySelectorAll('.rso-chk:checked')].map(el=>el.value);
+  const blEl=document.getElementById('r-bl');if(blEl)r.bl=blEl.value;
+  const wsEl=document.getElementById('r-ws');if(wsEl)r.ws=wsEl.value;
+  const rNoteEl=document.getElementById('r-note');if(rNoteEl)r.note=rNoteEl.value.trim();
+  closeM();render();
+}
+function saveShift(dk){const s=getSD(dk);const fe=document.getElementById('sh-front');if(fe)s.front=fe.value;SHIFT_TYPES.forEach(t=>{const chks=[...document.querySelectorAll('.sh-chk-'+t.id+':checked')].map(el=>el.value);s[t.id]=chks.length?chks:[];});closeM();render();}
+
+// 不可日データ: {'クマ': {'2026-05-15':true, ...}, ...}
+let UNAVAIL = {};
+STAFF.forEach(s=>{ UNAVAIL[s]={}; });
+
+let curOffStaff = '';
+
+
+function timeOpts(cur,startH=0,endH=23,endM=30){
+  let o='<option value="">―</option>';
+  for(let h=startH;h<=endH;h++){
+    for(let m of [0,30]){
+      if(h===endH&&m>endM)break;
+      if(h===startH&&m<0)continue;
+      const v=`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+      o+=`<option value="${v}"${cur===v?' selected':''}>${v}</option>`;
+    }
+  }
+  return o;
+}
+function timeSelHtml(id,cur,lbl,color,startH=0,endH=23,endM=30){
+  return`<div class="sg"><div class="slb"><span class="slb-b" style="color:${color}">${lbl}</span></div><select id="${id}">${timeOpts(cur,startH,endH,endM)}</select></div>`;
+}
+function timeRangeHtml(idS,idE,curS,curE,lbl,color,startH,endH,endM){
+  return`<div class="sg">
+    <div class="slb"><span class="slb-b" style="color:${color}">${lbl}</span></div>
+    <div style="display:flex;align-items:center;gap:6px">
+      <select id="${idS}" style="flex:1;font-size:13px;padding:7px 6px;border:1px solid #ddd;border-radius:8px;font-family:inherit">${timeOpts(curS,startH,endH,endM)}</select>
+      <span style="color:#999;font-size:12px">〜</span>
+      <select id="${idE}" style="flex:1;font-size:13px;padding:7px 6px;border:1px solid #ddd;border-radius:8px;font-family:inherit">${timeOpts(curE,startH,endH,endM)}</select>
+    </div>
+  </div>`;
+}
+
+// ===== スタッフ管理 =====
+function openStaffMgr(){
+  const list=STAFF.map((s,i)=>'<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;padding:7px 10px;border:1px solid #eee;border-radius:8px"><span style="flex:1;font-size:13px;font-weight:600">'+s+'</span><button onclick="removeStaff('+i+')" style="font-size:11px;padding:2px 8px;border:1px solid #ffcdd2;border-radius:5px;background:#fff;color:#cc3333;cursor:pointer;font-family:inherit">削除</button></div>').join('');
+  document.getElementById('mr').innerHTML='<div class="mov" onclick="closeM(event)"><div class="mbox" onclick="event.stopPropagation()" style="max-height:90vh;overflow-y:auto"><div class="mtitle">👥 スタッフ管理</div><div id="staff-list">'+(list||'<div style="color:#aaa;font-size:12px;padding:8px">スタッフなし</div>')+'</div><div class="msec">新しいスタッフを追加</div><input class="tinput" id="new-staff-name" placeholder="スタッフ名" style="margin-bottom:8px"><div class="mbtns"><button class="bcl" onclick="closeM()">閉じる</button><button class="bsv" onclick="addStaff()">＋ 追加</button></div></div></div>';
+}
+function addStaff(){
+  const el=document.getElementById('new-staff-name');const name=(el?el.value:'').trim();
+  if(!name){alert('スタッフ名を入力してください');return;}
+  if(STAFF.includes(name)){alert(name+' はすでに登録されています');return;}
+  STAFF.push(name);saveStaff();closeM();render();
+}
+function removeStaff(i){
+  if(!confirm(STAFF[i]+' を削除しますか？'))return;
+  STAFF.splice(i,1);saveStaff();closeM();render();
+}
+
+// ===== TAXI管理 =====
+function taxiSectionHtml(prefix,b){
+  b=b||{taxi_time:'',taxi_contacts:[]};
+  const contacts=b.taxi_contacts||[];
+  const rows=TAXI_LIST.map((t,i)=>{const sel=contacts.some(c=>c&&c.name===t.name);return '<label style="display:flex;align-items:center;gap:5px;padding:5px 8px;border:1px solid #eee;border-radius:8px;margin-bottom:4px;cursor:pointer;background:'+(sel?'#fff8e1':'#fafaf8')+'"><input type="checkbox" class="taxi-chk-'+prefix+'" value="'+i+'" '+(sel?'checked':'')+' style="width:14px;height:14px;accent-color:#e65100"> <span style="font-size:11px;flex:1">'+t.name+'</span><span style="font-size:10px;color:#888">'+t.tel+'</span></label>';}).join('');
+  let tOpts='<option value="">― 未定</option>';
+  for(let h=5;h<=23;h++)for(let m2 of[0,30]){const v=(h<10?'0':'')+h+':'+(m2===0?'00':'30');tOpts+='<option value="'+v+'" '+(b.taxi_time===v?'selected':'')+'>'+v+'</option>';}
+  return '<div style="display:flex;gap:6px;margin-bottom:6px"><div style="flex:1"><div style="font-size:10px;color:#666;margin-bottom:3px">呼び時間</div><select id="'+prefix+'-taxi-time" style="width:100%;font-size:12px;padding:6px;border:1px solid #ddd;border-radius:8px;font-family:inherit">'+tOpts+'</select></div><button onclick="openTaxiMgr()" style="padding:6px 10px;border-radius:8px;border:1px solid #ddd;background:#fff;font-size:11px;cursor:pointer;white-space:nowrap;margin-top:18px;font-family:inherit">＋ 連絡先</button></div><div style="font-size:10px;color:#666;margin-bottom:4px">連絡先（複数選択可）</div>'+(rows||'<div style="font-size:11px;color:#aaa">連絡先管理から追加</div>');
+}
+function getTaxiContacts(prefix){return [...document.querySelectorAll('.taxi-chk-'+prefix+':checked')].map(el=>TAXI_LIST[parseInt(el.value)]).filter(Boolean);}
+function openTaxiMgr(){
+  const list=TAXI_LIST.map((t,i)=>'<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;padding:7px 10px;border:1px solid #eee;border-radius:8px"><span style="flex:1;font-size:12px">'+t.name+'</span><span style="font-size:11px;color:#666">'+t.tel+'</span><button onclick="delTaxi('+i+')" style="font-size:11px;padding:2px 7px;border:1px solid #ffcdd2;border-radius:5px;background:#fff;color:#cc3333;cursor:pointer">✕</button></div>').join('');
+  document.getElementById('mr').innerHTML='<div class="mov" onclick="closeM(event)"><div class="mbox" onclick="event.stopPropagation()" style="max-height:90vh;overflow-y:auto"><div class="mtitle">🚕 TAXI連絡先管理</div><div id="taxi-area">'+(list||'<div style="color:#aaa;font-size:12px;padding:8px">登録なし</div>')+'</div><div class="msec">新規追加</div><input class="tinput" id="taxi-name" placeholder="会社名・ドライバー名" style="margin-bottom:6px"><input class="tinput" id="taxi-tel" placeholder="電話番号"><div class="mbtns"><button class="bcl" onclick="closeM()">閉じる</button><button class="bsv" onclick="addTaxi()">＋ 追加</button></div></div></div>';
+}
+function addTaxi(){const name=(document.getElementById('taxi-name')||{}).value||'';const tel=(document.getElementById('taxi-tel')||{}).value||'';if(!name.trim()){alert('名前を入力');return;}TAXI_LIST.push({name:name.trim(),tel:tel.trim()});saveTaxiList();closeM();}
+function delTaxi(i){TAXI_LIST.splice(i,1);saveTaxiList();openTaxiMgr();}
+
+// ===== アクティビティー =====
+function buildActsHtml(acts){if(!acts||!acts.length)return '<div style="color:#bbb;font-size:11px">まだ追加されていません</div>';return acts.map((a,i)=>'<div style="display:grid;grid-template-columns:1fr 1.2fr 0.8fr auto;gap:4px;margin-bottom:5px;padding:6px;border:1px solid #e0f0e8;border-radius:8px"><input class="act-date" placeholder="日にち" value="'+(a.date||'')+'" style="font-size:11px;padding:4px;border:1px solid #ddd;border-radius:6px;font-family:inherit"><input class="act-shop" placeholder="ショップ名" value="'+(a.shop||'')+'" style="font-size:11px;padding:4px;border:1px solid #ddd;border-radius:6px;font-family:inherit"><input class="act-time" placeholder="時間" value="'+(a.time||'')+'" style="font-size:11px;padding:4px;border:1px solid #ddd;border-radius:6px;font-family:inherit"><button onclick="removeActRow('+i+')" style="padding:4px 8px;border:1px solid #ffcdd2;border-radius:6px;background:#fff;color:#cc3333;cursor:pointer;font-size:11px">✕</button></div>').join('');}
+function collectActs(){const d=[...document.querySelectorAll('.act-date')].map(e=>e.value);const s=[...document.querySelectorAll('.act-shop')].map(e=>e.value);const t=[...document.querySelectorAll('.act-time')].map(e=>e.value);return d.map((_,i)=>({date:d[i],shop:s[i],time:t[i]})).filter(a=>a.date||a.shop||a.time);}
+function addActRow(){const acts=collectActs();acts.push({date:'',shop:'',time:''});const w=document.getElementById('acts-wrap');if(w)w.innerHTML=buildActsHtml(acts)+'<button onclick="addActRow()" style="width:100%;padding:7px;border:1px dashed #1D9E75;border-radius:8px;background:transparent;color:#1D9E75;font-size:12px;cursor:pointer;font-family:inherit;margin-top:4px">＋ 追加</button>';}
+function removeActRow(i){const acts=collectActs();acts.splice(i,1);const w=document.getElementById('acts-wrap');if(w)w.innerHTML=buildActsHtml(acts)+'<button onclick="addActRow()" style="width:100%;padding:7px;border:1px dashed #1D9E75;border-radius:8px;background:transparent;color:#1D9E75;font-size:12px;cursor:pointer;font-family:inherit;margin-top:4px">＋ 追加</button>';}
+
+// ===== 空室清掃モーダル =====
+function cleanBadge(val,icon,label,bg,col){if(val)return '<span style="font-size:8px;padding:1px 4px;border-radius:3px;background:'+bg+';color:'+col+'">'+icon+val+'</span>';return '<span style="font-size:8px;color:#bbb">'+icon+label+'</span>';}
+function openCleanModal(dk,villa,e){
+  if(e)e.stopPropagation();_mv=villa;_mdk=dk;
+  const cl=getClean(villa,dk);
+  document.getElementById('mr').innerHTML='<div class="mov" onclick="closeM(event)"><div class="mbox" onclick="event.stopPropagation()" style="max-height:90vh;overflow-y:auto"><div class="mtitle">🧹 空室清掃 '+villa+' '+curM+'/'+parseInt(dk.split('-')[2])+'</div><div class="msec first">🏠 室内清掃担当</div>'+selHtml('cl-indoor',cl.indoor||'','室内清掃担当','background:#e3f2fd;color:#1565c0')+'<div class="msec">🌿 外部清掃担当</div>'+selHtml('cl-outdoor',cl.outdoor||'','外部清掃担当','background:#e8f5e9;color:#2e7d32')+'<div class="msec">🪟 窓清掃担当</div>'+selHtml('cl-window',cl.window||'','窓清掃担当','background:#e0f7fa;color:#00695c')+'<div class="msec">✏️ 備考・自由書き込み</div>'+'<textarea class="tinput" id="cl-note" rows="2" style="resize:none" placeholder="清掃メモ・特記事項">'+(cl.note||'')+'</textarea>'+'<div class="mbtns"><button class="bcl" onclick="closeM()">閉じる</button><button class="bsv" onclick="saveCleanModal()">保存</button></div></div></div>';
+}
+function saveCleanModal(){const n=document.getElementById('cl-note');if(n){const cl2=getClean(_mv,_mdk);cl2.note=n.value.trim();} const cl=getClean(_mv,_mdk);const i=document.getElementById('cl-indoor');if(i)cl.indoor=i.value;const o=document.getElementById('cl-outdoor');if(o)cl.outdoor=o.value;const w=document.getElementById('cl-window');if(w)cl.window=w.value;closeM();render();}
+
+// ===== 休館日設定 =====
+function toggleHolidayFromDate(dk,e){
+  if(e)e.stopPropagation();
+  if(HOLIDAYS.has(dk)){if(!confirm(dk.slice(5)+' の休館日を解除しますか？'))return;HOLIDAYS.delete(dk);}
+  else{if(!confirm(dk.slice(5)+' を休館日にしますか？'))return;const nextDk=addDays(dk,1);VILLAS.forEach(v=>{const hasNext=BD[v]&&BD[v][nextDk]&&BD[v][nextDk].some(b=>b.g!=='休館日');if(hasNext)return;if(!BD[v])BD[v]={};if(!BD[v][dk])BD[v][dk]=[];if(!BD[v][dk].some(b=>b.g==='休館日'))BD[v][dk].push({g:'休館日',n:0,m:'',drt:false});});HOLIDAYS.add(dk);}
+  saveGuestToDB(b);
+  render();
+}
+
+// ===== JSON保存・読込 =====
+function exportJSON(){
+  const data=JSON.stringify({BD,FAC,HOLIDAYS:[...HOLIDAYS],HOL_DATA:{},CLEAN_DATA,DONE_DATA,STAFF,TAXI_LIST},null,2);
+  const blob=new Blob([data],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download='JUSANDI_backup_'+new Date().toISOString().slice(0,10)+'.json';a.click();
+}
+function importJSON(e){
+  const file=e.target.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=function(ev){
+    try{
+      const d=JSON.parse(ev.target.result);
+      if(d.BD)BD=d.BD;if(d.FAC)FAC=d.FAC;
+      if(d.HOLIDAYS)HOLIDAYS=new Set(d.HOLIDAYS);
+      if(d.CLEAN_DATA)CLEAN_DATA=d.CLEAN_DATA;
+      if(d.DONE_DATA)DONE_DATA=d.DONE_DATA;
+      if(d.STAFF){STAFF=d.STAFF;STAFF_E=[''].concat(STAFF);}
+      if(d.TAXI_LIST)TAXI_LIST=d.TAXI_LIST;
+      render();alert('✅ JSON読込完了');
+    }catch(err){alert('JSON読込失敗: '+err.message);}
+  };reader.readAsText(file);e.target.value='';
+}
+
+// ===== loadXL 拡張版 =====
+
+let _binId='';let _binKey='';let _syncTimeout=null;
+try{_binId=localStorage.getItem('jb_id')||'';_binKey=localStorage.getItem('jb_key')||'';}catch(e){}
+async function syncToCloud(){if(!_binId||!_binKey)return;try{await fetch('https://api.jsonbin.io/v3/b/'+_binId,{method:'PUT',headers:{'Content-Type':'application/json','X-Master-Key':_binKey},body:JSON.stringify({BD,FAC,HOLIDAYS:[...HOLIDAYS],CLEAN_DATA,DONE_DATA})});showCloudStatus('✅ 保存','#1D9E75');}catch(e){showCloudStatus('❌ 失敗','#cc3333');}}
+async function syncFromCloud(){if(!_binId||!_binKey)return;try{showCloudStatus('🔄...','#534AB7');const res=await fetch('https://api.jsonbin.io/v3/b/'+_binId+'/latest',{headers:{'X-Master-Key':_binKey}});if(!res.ok)throw new Error('読込失敗');const j=await res.json();const d=j.record;if(d.BD)BD=d.BD;if(d.FAC)FAC=d.FAC;if(d.HOLIDAYS)HOLIDAYS=new Set(d.HOLIDAYS);if(d.CLEAN_DATA)CLEAN_DATA=d.CLEAN_DATA;if(d.DONE_DATA)DONE_DATA=d.DONE_DATA;render();showCloudStatus('✅ 読込','#1D9E75');}catch(e){showCloudStatus('❌'+e.message,'#cc3333');}}
+function showCloudStatus(msg,color){const btn=document.getElementById('cloud-btn');if(btn){btn.textContent=msg;btn.style.background=color;}setTimeout(()=>{if(btn){btn.textContent='☁️ クラウド';btn.style.background='rgba(255,255,255,0.15)';}},3000);}
+function openCloudPanel(){document.getElementById('mr').innerHTML='<div class="mov" onclick="closeM(event)"><div class="mbox" onclick="event.stopPropagation()" style="max-height:90vh;overflow-y:auto"><div class="mtitle">☁️ クラウド同期設定</div><div style="font-size:11px;color:#555;margin-bottom:12px;padding:10px;background:#f0f9f5;border-radius:8px;line-height:1.9"><b>📋 設定手順（3ステップ）</b><br><b>①</b> <a href="https://jsonbin.io" target="_blank" style="color:#1D9E75">jsonbin.io</a> でアカウント作成（無料）<br><b>②</b> ログイン → 「＋ Create Bin」→ <b>Bin ID</b>をコピー<br><b>③</b> 右上 「API Keys」→ <b>Secret Key</b>をコピー</div><div class="msec first">🗂 Bin ID</div><input class="tinput" id="jb-id" value="'+_binId+'" placeholder="64a1b2c3..."><div class="msec">🔑 Secret Key</div><input class="tinput" id="jb-key" value="'+_binKey+'" placeholder="$2a$10$..."><div class="mbtns" style="flex-direction:column;gap:6px"><button class="bsv" onclick="saveCloudConfig()" style="background:#1D9E75">✅ 保存して接続</button><div style="display:flex;gap:8px"><button style="flex:1;padding:9px;border:1px solid #1D9E75;border-radius:8px;background:#fff;color:#1D9E75;font-size:13px;cursor:pointer;font-family:inherit" onclick="syncFromCloud()">⬇️ 読込</button><button style="flex:1;padding:9px;border:none;border-radius:8px;background:#534AB7;color:#fff;font-size:13px;cursor:pointer;font-family:inherit" onclick="syncToCloud()">⬆️ 保存</button></div><button class="bcl" onclick="closeM()">閉じる</button></div></div></div>';}
+function saveCloudConfig(){const id=(document.getElementById('jb-id')||{}).value||'';const key=(document.getElementById('jb-key')||{}).value||'';if(!id||!key){alert('入力してください');return;}_binId=id.trim();_binKey=key.trim();try{localStorage.setItem('jb_id',_binId);localStorage.setItem('jb_key',_binKey);}catch(e){}closeM();syncFromCloud();setInterval(syncFromCloud,30000);}
+if(_binId&&_binKey)setTimeout(()=>{syncFromCloud();setInterval(syncFromCloud,30000);},1000);
+
+function timeOptsHtml(cur,sh,eh,em){
+  let opts='<option value="">—</option>';
+  for(let h=sh;h<=eh;h++){
+    for(let m=0;m<60;m+=em||30){
+      if(h===eh&&m>0)break;
+      const t=`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+      opts+=`<option value="${t}" ${cur===t?'selected':''}>${t}</option>`;
+    }
+  }
+  return opts;
+}
+function getActRows(){
+  const rows=[];
+  document.querySelectorAll('.act-row').forEach(row=>{
+    const type=(row.querySelector('.act-type')||{}).value||'';
+    const time=(row.querySelector('.act-time')||{}).value||'';
+    const note=(row.querySelector('.act-note')||{}).value||'';
+    if(type||time||note)rows.push({type,time,note});
+  });
+  return rows;
+}
+
+// ===== ゲスト履歴DB =====
+let GUEST_DB={};
+try{GUEST_DB=JSON.parse(localStorage.getItem('jusandi_guests')||'{}');}catch(e){}
+function saveGuestDB(){try{localStorage.setItem('jusandi_guests',JSON.stringify(GUEST_DB));}catch(e){}}
+
+function saveGuestToDB(b){
+  if(!b.g||b.g.trim()==='')return;
+  const key=b.g.trim();
+  GUEST_DB[key]={
+    g:key,
+    nationality:b.nationality||'',
+    language:b.language||'',
+    payment:b.payment||'事前清算',
+    allergy:b.allergy||'',
+    dislike:b.dislike||'',
+    favorite:b.favorite||'',
+    purpose:b.purpose||[],
+    transport:b.transport||'',
+    repeat:b.g,
+    lastVisit:new Date().toISOString().slice(0,10)
+  };
+  saveGuestDB();
+}
+
+function searchGuests(q){
+  if(!q)return[];
+  const lq=q.toLowerCase();
+  return Object.keys(GUEST_DB).filter(k=>k.toLowerCase().includes(lq)).slice(0,8);
+}
+
+function fillGuestInfo(name){
+  const g=GUEST_DB[name];if(!g)return;
+  const fields={
+    'n-guest':g.g,'n-nationality':g.nationality,'n-language':g.language,
+    'n-allergy':g.allergy,'n-dislike':g.dislike,'n-favorite':g.favorite
+  };
+  Object.entries(fields).forEach(([id,val])=>{
+    const el=document.getElementById(id);if(el)el.value=val||'';
+  });
+  if(g.payment==='現地清算'){
+    const loc=document.getElementById('n-pay-loc');if(loc)loc.checked=true;
+  } else {
+    const pre=document.getElementById('n-pay-pre');if(pre)pre.checked=true;
+  }
+  if(g.purpose&&g.purpose.length){
+    document.querySelectorAll('.purp-chk-n').forEach(cb=>{cb.checked=g.purpose.includes(cb.value);});
+  }
+  document.getElementById('guest-suggest').innerHTML='';
+  document.getElementById('guest-suggest').style.display='none';
+}
+
+function onGuestInput(val){
+  const box=document.getElementById('guest-suggest');if(!box)return;
+  const results=searchGuests(val);
+  if(!results.length){box.style.display='none';return;}
+  box.innerHTML=results.map(name=>'<div onclick="fillGuestInfo(\''+name.replace(/'/g,"\\'")+'\')" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #eee;font-size:13px;hover:background:#f5f5f5">'+name+'</div>').join('');
+  box.style.display='block';
+}
+
+function makeDraggable(box){
+  if(!box||box._drag)return;
+  box._drag=true;
+  box.style.position='fixed';
+  box.style.cursor='default';
+  box.style.margin='0';
+  const handle=box.querySelector('.mtitle')||box;
+  handle.style.cursor='grab';
+  let dragging=false,sx=0,sy=0,ox=0,oy=0;
+  const start=function(e){
+    e.stopPropagation();
+    const p=e.touches?e.touches[0]:e;
+    sx=p.clientX;sy=p.clientY;
+    const r=box.getBoundingClientRect();
+    ox=r.left;oy=r.top;
+    box.style.left=ox+'px';box.style.top=oy+'px';
+    box.style.transform='none';
+    dragging=true;
+    document.addEventListener('mousemove',move);
+    document.addEventListener('mouseup',stop);
+    document.addEventListener('touchmove',move,{passive:false});
+    document.addEventListener('touchend',stop);
+  };
+  const move=function(e){
+    if(!dragging)return;
+    if(e.cancelable)e.preventDefault();
+    const p=e.touches?e.touches[0]:e;
+    box.style.left=(ox+p.clientX-sx)+'px';
+    box.style.top=(oy+p.clientY-sy)+'px';
+  };
+  const stop=function(){
+    dragging=false;
+    document.removeEventListener('mousemove',move);
+    document.removeEventListener('mouseup',stop);
+    document.removeEventListener('touchmove',move);
+    document.removeEventListener('touchend',stop);
+  };
+  handle.addEventListener('mousedown',start);
+  handle.addEventListener('touchstart',start,{passive:false});
+}
+
+function applyDrag(){
+  const mr=document.getElementById('mr');
+  if(!mr)return;
+  const box=mr.querySelector('.mbox');
+  if(box){
+    box.style.maxHeight='80vh';
+    box.style.overflowY='auto';
+    box.style.position='fixed';
+    box.style.top='10vh';
+    box.style.left='50%';
+    box.style.transform='translateX(-50%)';
+    makeDraggable(box);
+  }
+}
+
+// ===== 詳細ポップアップ =====
+let _detailTimer=null;
+function makeDetailRows(b,villa,dk){
+  if(!b)return'';
+  const m=b.m||'';
+  const rows=[
+    b.g?['👤 お客様',b.g+(b.nationality?' ('+b.nationality+')':'')+(b.language?' / '+b.language:'')]:'',
+    ['📅 泊数',b.n+'泊 '+m+(b.drt?' DRT':'')+(b.payment?' 💳'+b.payment:'')],
+    b.ci?['⏰ CI時間',b.ci]:'',
+    b.co?['⏰ CO時間',b.co]:'',
+    b.transport?['🚗 交通',b.transport]:'',
+    b.bf?['🍳 BF担当',b.bf+(b.bf_start?' '+b.bf_start+'〜'+(b.bf_end||''):'')]:'',
+    (b.dn||b.dn_type)?['🍽 DN担当',(b.dn||'未定')+(b.dn_start?' '+b.dn_start+'〜'+(b.dn_end||''):'')]:'',
+    b.taxi_time?['🚕 TAXI',b.taxi_time]:'',
+    b.allergy?['🚫 アレルギー',b.allergy]:'',
+    b.dislike?['😣 苦手',b.dislike]:'',
+    b.favorite?['😋 好き',b.favorite]:'',
+    b.ev&&b.ev.length?['🎉 イベント',b.ev.join('・')]:'',
+    b.dineout?['🍜 外食',b.dineout]:'',
+    b.request?['📝 要望',b.request]:'',
+    (b.si_in&&b.si_in.length)?['🧹 IN清掃',b.si_in.join('・')]:'',
+    b.setting?['🟠 設定',b.setting]:'',
+    b.co_note?['📝 特記',b.co_note]:'',
+    b.stay_note?['📝 連泊特記',b.stay_note]:'',
+  ].filter(r=>r&&r[1]);
+  return rows.map(([k,v])=>'<div style="display:flex;gap:8px;margin-bottom:5px;font-size:12px"><span style="color:#888;white-space:nowrap;min-width:80px">'+k+'</span><span style="font-weight:600;word-break:break-word">'+v+'</span></div>').join('');
+}
+function showDetail(dk,villa,e){
+  clearTimeout(_detailTimer);
+  const old=document.getElementById('detail-popup');if(old)old.remove();
+  // 全bookingデータを収集（複数棟・複数日程）
+  let sections=[];
+  // checkin booking on dk
+  if(BD[villa]&&BD[villa][dk]&&BD[villa][dk][0]){
+    sections.push({label:'▶ CI',color:'#e8f5e9',b:BD[villa][dk][0]});
+  }
+  // checkout booking (b.n日後がdk になるもの)
+  Object.entries(BD[villa]||{}).forEach(([ciDk,bks])=>{
+    const b=bks[0];if(!b)return;
+    const coDk=addDays(ciDk,b.n);
+    if(coDk===dk&&ciDk!==dk){
+      sections.push({label:'◀ CO',color:'#fce4ec',b});
+    }
+    // stay
+    for(let i=1;i<b.n;i++){if(addDays(ciDk,i)===dk)sections.push({label:'↳ 連泊',color:'#e3f2fd',b});}
+  });
+  if(!sections.length)return;
+  const pop=document.createElement('div');
+  pop.id='detail-popup';
+  let html='<div style="font-weight:700;font-size:13px;margin-bottom:10px;color:#1D9E75;border-bottom:1px solid #eee;padding-bottom:6px">'+villa+' '+dk.slice(5).replace('-','/')+'</div>';
+  sections.forEach(sec=>{
+    html+='<div style="background:'+sec.color+';border-radius:8px;padding:8px;margin-bottom:8px">'
+      +'<div style="font-size:10px;font-weight:700;color:#555;margin-bottom:5px">'+sec.label+'　'+sec.b.g+'</div>'
+      +makeDetailRows(sec.b,villa,dk)+'</div>';
+  });
+  html+='<div style="margin-top:8px;font-size:11px;color:#aaa;text-align:right">タップで編集</div>';
+  pop.innerHTML=html;
+  Object.assign(pop.style,{
+    position:'fixed',zIndex:'9999',background:'#fff',
+    border:'1px solid #ddd',borderRadius:'14px',
+    padding:'14px',boxShadow:'0 8px 30px rgba(0,0,0,0.2)',
+    maxWidth:'320px',minWidth:'220px',
+    pointerEvents:'none',maxHeight:'80vh',overflowY:'auto'
+  });
+  document.body.appendChild(pop);
+  const vw=window.innerWidth,vh=window.innerHeight;
+  const t=e.target.closest('td');
+  const tr=t?t.getBoundingClientRect():{top:e.clientY,left:e.clientX,right:e.clientX,bottom:e.clientY};
+  let left=tr.right+10;let top=tr.top;
+  if(left+330>vw)left=tr.left-330;
+  if(left<0)left=8;
+  if(top+pop.scrollHeight>vh)top=Math.max(8,vh-pop.scrollHeight-8);
+  pop.style.left=left+'px';pop.style.top=top+'px';
+}
+function hideDetail(){
+  _detailTimer=setTimeout(()=>{const p=document.getElementById('detail-popup');if(p)p.remove();},200);
+}
+document.addEventListener('click',function(e){
+  if(!e.target.closest('#detail-popup'))hideDetail();
+});
+function isUnavail(staff, dk){ return !!(UNAVAIL[staff] && UNAVAIL[staff][dk]); }
+
+// ビュー切替
+function switchView(v){
+  document.getElementById('panel-cal').style.display = v==='cal' ? 'flex' : 'none';
+  document.getElementById('panel-cal').style.flexDirection = 'column';
+  document.getElementById('panel-off').style.display = v==='off' ? 'block' : 'none';
+  document.getElementById('tab-cal').className = 'view-tab' + (v==='cal'?' active':'');
+  document.getElementById('tab-off').className = 'view-tab' + (v==='off'?' active':'');
+  if(v==='off'){
+    const ml=document.getElementById('off-month-lbl');
+    if(ml)ml.textContent=curY+'年'+curM+'月';
+    renderOffView();
+  }
+}
+
+// 不可日ビュー描画
+function renderOffView(){
+  // スタッフタブ
+  const tabs = document.getElementById('off-staff-tabs');
+  tabs.innerHTML = STAFF.map(s=>`
+    <button onclick="selectOffStaff('${s}')" style="
+      padding:7px 14px;border-radius:20px;border:1.5px solid ${curOffStaff===s?'#993C1D':'#ddd'};
+      background:${curOffStaff===s?'#993C1D':'#fff'};color:${curOffStaff===s?'#fff':'#333'};
+      font-size:13px;font-family:inherit;cursor:pointer;font-weight:${curOffStaff===s?'700':'400'}
+    ">${s}</button>`).join('');
+
+  const lbl = document.getElementById('off-selected-lbl');
+  if(!curOffStaff){ lbl.textContent='← スタッフを選択してください'; renderOffCal(); return; }
+
+  const offCount = Object.keys(UNAVAIL[curOffStaff]||{}).length;
+  lbl.textContent = `${curOffStaff} さんの不可日：${offCount}日`;
+  renderOffCal();
+}
+
+
+function offChM(d){
+  curM+=d;
+  if(curM>12){curM=1;curY++;}
+  if(curM<1){curM=12;curY--;}
+  document.getElementById('off-month-lbl').textContent=curY+'年'+curM+'月';
+  renderOffView();
+}
+function selectOffStaff(s){
+  curOffStaff = s;
+  renderOffView();
+}
+
+function renderOffCal(){
+  const cal = document.getElementById('off-cal');
+  if(!curOffStaff){ cal.innerHTML=''; return; }
+  const days = dim(curY, curM);
+  const today = key(new Date().getFullYear(), new Date().getMonth()+1, new Date().getDate());
+  const firstDow = new Date(curY, curM-1, 1).getDay();
+
+  let html = '';
+  // 空白
+  for(let i=0;i<firstDow;i++) html += '<div class="off-day empty"></div>';
+  // 日付
+  for(let d=1;d<=days;d++){
+    const dk = key(curY, curM, d);
+    const dow = new Date(curY, curM-1, d).getDay();
+    const isOff = isUnavail(curOffStaff, dk);
+    const isTd = dk===today;
+    const cls = [
+      'off-day',
+      dow===0?'sun':dow===6?'sat':'',
+      isOff?'off':'',
+      isTd?'today':''
+    ].filter(Boolean).join(' ');
+    html += `<div class="${cls}" onclick="toggleOff('${dk}')">${d}</div>`;
+  }
+  // 不可日リスト
+  const offDays = Object.keys(UNAVAIL[curOffStaff]||{}).sort();
+  if(offDays.length){
+    html += `<div style="margin-top:14px;padding:10px;background:#fff5f5;border-radius:8px;border:1px solid #f5c1c1">
+      <div style="font-size:11px;font-weight:700;color:#cc3333;margin-bottom:6px">🙅 登録済み不可日</div>
+      <div style="display:flex;flex-wrap:wrap;gap:5px">
+        ${offDays.map(dk=>{
+          const dt=new Date(dk);
+          const dow=dt.getDay();
+          const wj=['日','月','火','水','木','金','土'][dow];
+          return `<span onclick="toggleOff('${dk}')" style="font-size:11px;padding:3px 9px;border-radius:12px;background:#ff5252;color:#fff;cursor:pointer">${dt.getMonth()+1}/${dt.getDate()}(${wj}) ✕</span>`;
+        }).join('')}
+      </div>
+    </div>`;
+  }
+  cal.innerHTML = html;
+}
+
+function toggleOff(dk){
+  if(!curOffStaff) return;
+  if(!UNAVAIL[curOffStaff]) UNAVAIL[curOffStaff]={};
+  if(UNAVAIL[curOffStaff][dk]) delete UNAVAIL[curOffStaff][dk];
+  else UNAVAIL[curOffStaff][dk] = true;
+  renderOffView();
+}
+
+// multiCheckHtmlを不可日対応版に上書き
+function multiCheckHtml(id, selected, dk){
+  selected = selected||[];
+  return `<div class="multi-check-grid">`+STAFF.map(s=>{
+    const chk = selected.includes(s);
+    const unavail = dk && isUnavail(s, dk);
+    const disabledAttr = unavail ? 'disabled' : '';
+    const disabledCls = unavail ? ' disabled' : '';
+    const checkedCls = chk ? ' checked' : '';
+    return `<label class="mc-lbl${checkedCls}${disabledCls}" id="mclbl-${id}-${s}">
+      <input type="checkbox" class="mc-${id}" value="${s}" ${chk?'checked':''} ${disabledAttr}
+        onchange="if(!this.disabled){this.closest('label').className='mc-lbl'+(this.checked?' checked':'');}">
+      ${s}${unavail?`<span class="unavail-badge">🙅不可</span>`:''}
+    </label>`;
+  }).join('')+`</div>`;
+}
+
+try{render();}catch(e){document.body.innerHTML='<h1 style="color:red;font-size:20px;padding:20px">エラー: '+e.message+'<br><pre>'+e.stack+'</pre></h1>';}
+</script>
+<div id="mr"></div>
+</body>
+</html>
